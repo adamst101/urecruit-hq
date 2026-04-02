@@ -193,10 +193,19 @@ export default function Home() {
           .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
           .hero-subtext br { display: none !important; }
           .hero-proof-strip { font-size: 11px !important; }
-          .hero-proof-strip-wrap { display: none !important; }
+          /* Show proof strip on mobile — important trust signal for social traffic */
+          .hero-proof-strip-wrap { display: block !important; padding: 8px 16px !important; }
           .hero-scroll-nudge { display: none !important; }
           .stats-bar-desktop { display: none !important; }
           .all-camps-img-mobile { display: block !important; }
+          /* Mobile CTA: primary full-width, secondary visually demoted */
+          .hero-cta-row { flex-direction: column !important; gap: 10px !important; }
+          .hero-cta-primary-wrap { width: 100% !important; }
+          .hero-cta-primary-wrap button { width: 100% !important; justify-content: center !important; box-sizing: border-box !important; }
+          /* Hide pricing CTA on mobile — anonymous discovery should only see demo */
+          .hero-cta-secondary { display: none !important; }
+          /* Show mobile trust nudge below primary CTA */
+          .hero-mobile-trust { display: flex !important; }
         }
         @media (min-width: 768px) and (max-width: 1024px) {
           .hero-h1-line1 { font-size: 3.2vw !important; }
@@ -408,14 +417,14 @@ export default function Home() {
               </div>
 
               {/* CTAs — demo is primary conversion goal */}
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
-                <div>
+              <div className="hero-cta-row" style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 28 }}>
+                <div className="hero-cta-primary-wrap">
                   <button onClick={handleTryDemo} style={S.ctaPrimary}>
                     Try Free Demo{" "}
                     <ArrowRight style={{ width: 18, height: 18, marginLeft: 6 }} />
                   </button>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="hero-cta-secondary" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   <button
                     onClick={handlePricingSignup}
                     style={S.ctaOutline}
@@ -428,6 +437,28 @@ export default function Home() {
                     $49 · one season (one-time payment)
                   </span>
                 </div>
+              </div>
+
+              {/* Mobile-only trust nudge — shown on small screens below primary CTA */}
+              <div
+                className="hero-mobile-trust"
+                style={{
+                  display: "none",
+                  alignItems: "center",
+                  gap: 16,
+                  marginBottom: 20,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#e8a020" }}>✓</span> No credit card required
+                </span>
+                <span style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#e8a020" }}>✓</span> Free to explore
+                </span>
+                <span style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
+                  <span style={{ color: "#e8a020" }}>✓</span> Football families
+                </span>
               </div>
 
               {/* Coach / trainer entry — two-path: demo first, signup second */}

@@ -38,12 +38,14 @@ export default function NoAccessWarning() {
       const { demoSeasonYear } = getDemoDefaults();
       const yr = demoYear || demoSeasonYear;
       if (yr) setDemoMode(yr);
+      // Route through DemoStory so anonymous users enter the Demo Journey,
+      // not directly into Workspace or Discover (product rule: anon → DemoStory first).
       if (base44?.auth?.logout) {
-        await base44.auth.logout("/Discover?mode=demo&src=no_access_popup");
+        await base44.auth.logout("/DemoStory?src=no_access_popup");
         return;
       }
     } catch {}
-    window.location.assign("/Discover?mode=demo&src=no_access_popup");
+    window.location.assign("/DemoStory?src=no_access_popup");
   }
 
   return (

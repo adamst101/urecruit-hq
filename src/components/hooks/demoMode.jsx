@@ -7,8 +7,8 @@ import { footballDemoSeasonYear } from "../utils/seasonEntitlements.jsx";
  *
  * Contract:
  * - Demo defaults to "previous season" (football rule, Feb 1 rollover)
- * - Home "Access Demo" sets demo mode + seasonYear into session storage
- * - Discover can read this to keep user in demo until cleared
+ * - Home "Try Free Demo" → /DemoStory (sets demo mode + seasonYear here before navigating)
+ * - Pages read this to preserve demo context across the journey until logout/clear
  */
 
 const KEY = "demoMode_v1";

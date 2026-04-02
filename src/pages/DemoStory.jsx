@@ -294,6 +294,11 @@ export default function DemoStory() {
     >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+        @media (max-width: 600px) {
+          .demo-story-next { width: 100% !important; justify-content: center !important; }
+          .demo-story-nav  { flex-direction: column-reverse !important; gap: 8px !important; }
+          .demo-story-back { width: 100% !important; justify-content: center !important; }
+        }
       `}</style>
 
       {/* ── Top bar ── */}
@@ -369,6 +374,7 @@ export default function DemoStory() {
 
         {/* ── Navigation ── */}
         <div
+          className="demo-story-nav"
           style={{
             display: "flex",
             alignItems: "center",
@@ -381,12 +387,13 @@ export default function DemoStory() {
           {/* Back */}
           {step > 0 ? (
             <button
+              className="demo-story-back"
               onClick={() => goTo(step - 1)}
               style={{
                 background: "none",
                 border: "1px solid #1e2d45",
                 borderRadius: 9,
-                padding: "10px 18px",
+                padding: "12px 18px",
                 color: "#6b7280",
                 fontSize: 14,
                 cursor: "pointer",
@@ -394,6 +401,7 @@ export default function DemoStory() {
                 alignItems: "center",
                 gap: 6,
                 fontFamily: "inherit",
+                minHeight: 44,
               }}
             >
               <ArrowLeft style={{ width: 14, height: 14 }} />
@@ -406,13 +414,14 @@ export default function DemoStory() {
           {/* Next / Start Tour */}
           {isLastStep ? (
             <button
+              className="demo-story-next"
               onClick={startTour}
               style={{
                 background: "#e8a020",
                 color: "#0a0e1a",
                 border: "none",
                 borderRadius: 9,
-                padding: "12px 28px",
+                padding: "14px 28px",
                 fontSize: 15,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -420,6 +429,7 @@ export default function DemoStory() {
                 alignItems: "center",
                 gap: 6,
                 fontFamily: "inherit",
+                minHeight: 44,
               }}
             >
               Start Marcus's Tour
@@ -427,13 +437,14 @@ export default function DemoStory() {
             </button>
           ) : (
             <button
+              className="demo-story-next"
               onClick={() => goTo(step + 1)}
               style={{
                 background: "#e8a020",
                 color: "#0a0e1a",
                 border: "none",
                 borderRadius: 9,
-                padding: "11px 22px",
+                padding: "14px 22px",
                 fontSize: 14,
                 fontWeight: 700,
                 cursor: "pointer",
@@ -441,6 +452,7 @@ export default function DemoStory() {
                 alignItems: "center",
                 gap: 6,
                 fontFamily: "inherit",
+                minHeight: 44,
               }}
             >
               How URecruitHQ Helps

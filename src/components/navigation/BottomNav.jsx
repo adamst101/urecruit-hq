@@ -76,7 +76,12 @@ export default function BottomNav() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-ur-page border-t border-ur-shell-border">
+    // padding-bottom: env(safe-area-inset-bottom) prevents nav buttons from sitting under the
+    // iPhone home indicator. Falls back to 0px on devices without a safe area.
+    <div
+      className="fixed bottom-0 left-0 right-0 z-40 bg-ur-page border-t border-ur-shell-border"
+      style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+    >
       <div className="max-w-5xl mx-auto px-4">
         <div className="h-16 flex items-center justify-around">
           {items.map(({ label, to, Icon }) => {
