@@ -348,6 +348,12 @@ export default function GuidedTourOverlay({ tourKey }) {
             /* Push content above the iPhone home indicator */
             padding-bottom: env(safe-area-inset-bottom, 0px) !important;
           }
+          /* Tighten body padding ~25% to reveal more product below the sheet */
+          .dt-body   { padding: 10px 16px 10px !important; }
+          .dt-title  { font-size: 14px !important; margin-bottom: 5px !important; }
+          .dt-message{ margin-bottom: 6px !important; line-height: 1.5 !important; }
+          .dt-hint   { margin-bottom: 6px !important; font-size: 11px !important; }
+          .dt-navlock{ font-size: 10px !important; margin-bottom: 8px !important; }
           /* Stack actions vertically: amber CTA full-width on top, skip text below */
           .dt-actions {
             flex-direction: column-reverse !important;
@@ -356,8 +362,8 @@ export default function GuidedTourOverlay({ tourKey }) {
           .dt-next-btn {
             width: 100% !important;
             justify-content: center !important;
-            padding: 13px 18px !important;
-            font-size: 15px !important;
+            padding: 12px 18px !important;
+            font-size: 14px !important;
           }
           .dt-skip-btn {
             width: 100% !important;
@@ -367,6 +373,19 @@ export default function GuidedTourOverlay({ tourKey }) {
           }
         }
       `}</style>
+
+      {/* Subtle backdrop — reduces visual competition on dense pages (Calendar, Discover, Tracker).
+          pointerEvents:none so the user can still interact with the page behind the overlay. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.22)",
+          zIndex: 49999,
+          pointerEvents: "none",
+        }}
+      />
       <div
         className="dt-card"
         style={{
@@ -445,9 +464,10 @@ export default function GuidedTourOverlay({ tourKey }) {
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: "16px 18px 18px" }}>
+        <div className="dt-body" style={{ padding: "16px 18px 18px" }}>
           {/* Step title */}
           <div
+            className="dt-title"
             style={{
               fontSize: 16,
               fontWeight: 700,
@@ -461,6 +481,7 @@ export default function GuidedTourOverlay({ tourKey }) {
 
           {/* Narrative message */}
           <div
+            className="dt-message"
             style={{
               fontSize: 13,
               color: C.body,
@@ -474,6 +495,7 @@ export default function GuidedTourOverlay({ tourKey }) {
           {/* Hint */}
           {step.hint && (
             <div
+              className="dt-hint"
               style={{
                 fontSize: 12,
                 color: C.hint,
@@ -489,6 +511,7 @@ export default function GuidedTourOverlay({ tourKey }) {
 
           {/* Nav lock note — phrased as an invitation, not a warning */}
           <div
+            className="dt-navlock"
             style={{
               fontSize: 11,
               color: C.navLock,

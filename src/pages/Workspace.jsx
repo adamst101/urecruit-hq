@@ -385,7 +385,30 @@ export default function Workspace() {
 
   return (
     <div style={{ background: "#0a0e1a", color: "#f9fafb", minHeight: "100vh", paddingBottom: 80, fontFamily: "'DM Sans', Inter, system-ui, sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
+        @media (max-width: 640px) {
+          /* Reduce top breathing room — 48px is desktop-sized on a phone */
+          .ws-header-section { padding-top: 24px !important; }
+          /* Let the CTA block drop below the headline on narrow screens */
+          .ws-header-row { flex-wrap: wrap !important; }
+          /* CTA block: full-width, column stack, button full-width */
+          .ws-demo-cta-wrap {
+            width: 100% !important;
+            align-items: flex-start !important;
+            margin-top: 12px !important;
+          }
+          .ws-demo-cta-btn {
+            width: 100% !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+          }
+          /* Next Step panel: tighter padding on small screen */
+          .ws-nextstep-panel { padding: 18px 16px !important; }
+          /* Action buttons: tighter on mobile */
+          .ws-nextstep-action-btn { padding: 9px 14px !important; font-size: 13px !important; }
+        }
+      `}</style>
 
       {/* ── ATHLETE SWITCHER ── */}
       {isMember && season?.accountId && (
@@ -407,8 +430,8 @@ export default function Workspace() {
       )}
 
       {/* ── HEADER ── */}
-      <section style={{ padding: "48px 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
+      <section className="ws-header-section" style={{ padding: "48px 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="ws-header-row" style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
           <div style={{ width: 3, height: 40, background: "#e8a020", borderRadius: 2, flexShrink: 0, marginTop: 4 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "clamp(36px, 5vw, 56px)", lineHeight: 1, margin: 0, letterSpacing: 1 }}>
@@ -453,8 +476,9 @@ export default function Workspace() {
             </button>
           )}
           {isUserDemo && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
+            <div className="ws-demo-cta-wrap" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
               <button
+                className="ws-demo-cta-btn"
                 onClick={() => nav(`${ROUTES.Subscribe}?source=user_demo_workspace`)}
                 style={{ background: "#e8a020", color: "#0a0e1a", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
               >
@@ -531,7 +555,7 @@ export default function Workspace() {
       {/* ── YOUR NEXT STEP PANEL ── */}
       {(isMember || isUserDemo) && (
         <section style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{
+          <div className="ws-nextstep-panel" style={{
             background: "linear-gradient(135deg, #0f1a2e 0%, #111827 100%)",
             border: "1px solid #e8a020",
             borderLeft: "4px solid #e8a020",
@@ -551,6 +575,7 @@ export default function Workspace() {
               {activeStep.actions.map((a, i) => (
                 <button
                   key={a.label}
+                  className="ws-nextstep-action-btn"
                   onClick={() => nav(a.route)}
                   style={{
                     background: i === 0 ? "#e8a020" : "transparent",
