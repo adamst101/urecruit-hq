@@ -190,8 +190,13 @@ export default function Home() {
           .hero-h1-line2 { font-size: 10vw !important; }
           .hero-cols { flex-direction: column !important; margin-top: 8px !important; }
           .hero-text-col { flex: 0 0 100% !important; width: 100% !important; padding-top: 12px !important; }
-          .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
-          .hero-subtext br { display: none !important; }
+          .hero-subtext { display: none !important; }
+          /* Mobile-only clean subhead */
+          .hero-mobile-subhead { display: block !important; }
+          .hero-support-wrap { display: none !important; }
+          .hero-coach-section { display: none !important; }
+          .hero-bullets { display: none !important; }
+          .hero-legal-notes { display: none !important; }
           .hero-proof-strip { font-size: 11px !important; }
           /* Show proof strip on mobile — important trust signal for social traffic */
           .hero-proof-strip-wrap { display: block !important; padding: 8px 16px !important; }
@@ -414,7 +419,10 @@ export default function Home() {
               }}>
                 Understand recruiting earlier. Organize camps. Track progress with more clarity, structure, and confidence.
               </p>
-              <div style={{ margin: "0 0 28px", maxWidth: 560 }}>
+              <p className="hero-mobile-subhead" style={{ display: "none", fontSize: 15, color: "#9ca3af", lineHeight: 1.5, margin: "0 0 16px" }}>
+                URecruit HQ helps families understand recruiting, organize camps, and track real progress.
+              </p>
+              <div className="hero-support-wrap" style={{ margin: "0 0 28px", maxWidth: 560 }}>
                 <p className="hero-support-line" style={{ fontSize: 17, fontWeight: 600, color: "#d1d5db", lineHeight: 1.3, margin: 0, whiteSpace: "nowrap" }}>
                   Support the dream with more than camps, posts, and hope.
                 </p>
@@ -460,13 +468,10 @@ export default function Home() {
                 <span style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ color: "#e8a020" }}>✓</span> Free to explore
                 </span>
-                <span style={{ fontSize: 12, color: "#9ca3af", display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#e8a020" }}>✓</span> Football families
-                </span>
               </div>
 
               {/* Coach / trainer entry — two-path: demo first, signup second */}
-              <div style={{ borderTop: "1px solid #1a2535", paddingTop: 14, marginBottom: 24 }}>
+              <div className="hero-coach-section" style={{ borderTop: "1px solid #1a2535", paddingTop: 14, marginBottom: 24 }}>
                 <p style={{ fontSize: 11, color: "#4b5563", margin: "0 0 9px", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
                   Are you a coach or trainer?
                 </p>
@@ -496,25 +501,29 @@ export default function Home() {
               </div>
 
               {/* Checkmark bullets */}
-              {[
-                [campDisplay + " Verified", "College Football Camps"],
-                ["New camps added", "weekly from official school sites"],
-                ["Built for", "football families"],
-              ].map(([bold, rest]) => (
-                <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
-                  <span style={{ fontSize: 14, color: "#d1d5db" }}>
-                    <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
-                  </span>
-                </div>
-              ))}
+              <div className="hero-bullets">
+                {[
+                  [campDisplay + " Verified", "College Football Camps"],
+                  ["New camps added", "weekly from official school sites"],
+                  ["Built for", "football families"],
+                ].map(([bold, rest]) => (
+                  <div key={bold} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <CheckCircle2 style={{ width: 18, height: 18, color: "#e8a020", flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, color: "#d1d5db" }}>
+                      <strong style={{ color: "#f9fafb" }}>{bold}</strong> {rest}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-              <p style={{ fontSize: 12, color: "#e8a020", fontWeight: 500, marginTop: 18 }}>
-                ⚡ Summer camp season opens March–April — early registrations fill fast.
-              </p>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
-                No auto-renew · Cancel anytime · Secure checkout (Stripe)
-              </p>
+              <div className="hero-legal-notes">
+                <p style={{ fontSize: 12, color: "#e8a020", fontWeight: 500, marginTop: 18 }}>
+                  ⚡ Summer camp season opens March–April — early registrations fill fast.
+                </p>
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 4 }}>
+                  No auto-renew · Cancel anytime · Secure checkout (Stripe)
+                </p>
+              </div>
             </div>
 
           {/* RIGHT — laptop image (hidden on mobile) */}

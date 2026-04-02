@@ -117,7 +117,7 @@ export default function Workspace() {
   const demoNextStep = useMemo(() => ({
     eyebrow: "MARCUS'S NEXT STEP",
     headline: "Three camps locked in. Keep building.",
-    body: `WKU, Tennessee, and Auburn are confirmed for spring. Seven more schools are on the radar — check the calendar for back-to-back conflicts, review the full saved list, and log every coach contact as it comes in. ${DEMO_JOURNEY_METRICS.true_traction_school_count} schools are showing real traction.`,
+    body: "WKU, Tennessee, and Auburn are confirmed. Next move: compare schools and keep tracking coach activity.",
     actions: [
       { label: "View My Camps →", route: `${ROUTES.MyCamps}?demo=user` },
       { label: "View Calendar →", route: `${ROUTES.Calendar}?demo=user` },
@@ -407,6 +407,13 @@ export default function Workspace() {
           .ws-nextstep-panel { padding: 18px 16px !important; }
           /* Action buttons: tighter on mobile */
           .ws-nextstep-action-btn { padding: 9px 14px !important; font-size: 13px !important; }
+          /* Demo mobile: hide verbose context note and micro message */
+          .ws-demo-context { display: none !important; }
+          .ws-micro-msg-section { display: none !important; }
+          /* Show mobile-only demo subhead */
+          .ws-demo-subhead { display: block !important; }
+          /* Larger CTA button on mobile */
+          .ws-demo-cta-btn { padding: 13px 18px !important; font-size: 14px !important; }
         }
       `}</style>
 
@@ -438,12 +445,17 @@ export default function Workspace() {
               YOUR RECRUITING HQ
             </h1>
             {isUserDemo && (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 8, background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 6, padding: "4px 10px" }}>
+              <div className="ws-demo-badge" style={{ display: "inline-flex", alignItems: "center", gap: 8, marginTop: 8, background: "rgba(232,160,32,0.07)", border: "1px solid rgba(232,160,32,0.18)", borderRadius: 6, padding: "4px 10px" }}>
                 <span style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.1em" }}>Sample Demo</span>
                 <span style={{ fontSize: 12, color: "#6b7280" }}>
                   {DEMO_ATHLETE.athlete_name} · {DEMO_ATHLETE.position} · Class of {DEMO_ATHLETE.grad_year} · {DEMO_ATHLETE.home_city}, {DEMO_ATHLETE.state}
                 </span>
               </div>
+            )}
+            {isUserDemo && (
+              <p className="ws-demo-subhead" style={{ display: "none", fontSize: 13, color: "#6b7280", margin: "8px 0 0", lineHeight: 1.5 }}>
+                See camps, plans, and recruiting activity in one place.
+              </p>
             )}
             {season?.accountId && !isUserDemo && (
               <p style={{ color: "#9ca3af", fontSize: 16, margin: "8px 0 0" }}>
@@ -504,7 +516,7 @@ export default function Workspace() {
 
         {/* Demo context note — replaces marketing hero in favour of the real dashboard flow below */}
         {isUserDemo && (
-          <div style={{ marginTop: 14, marginBottom: 0, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div className="ws-demo-context" style={{ marginTop: 14, marginBottom: 0, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <p style={{ margin: 0, fontSize: 13, color: "#4b5563", lineHeight: 1.6 }}>
               This account is pre-loaded with Marcus Johnson's recruiting story — real platform, synthetic data.
             </p>
@@ -677,7 +689,7 @@ export default function Workspace() {
 
       {/* ── MICRO MESSAGE ── */}
       {(isMember || isUserDemo) && (
-        <section style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
+        <section className="ws-micro-msg-section" style={{ padding: "0 24px 24px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ borderLeft: "3px solid #1f2937", paddingLeft: 16 }}>
             <p style={{ fontSize: 14, color: "#4b5563", margin: 0, lineHeight: 1.7, fontStyle: "italic" }}>
               {isUserDemo

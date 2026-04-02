@@ -14,72 +14,74 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { X, ArrowRight, Sparkles } from "lucide-react";
 
 // ── Tour sequence ──────────────────────────────────────────────────────────────
+// Copy direction: outcome-led, one sentence per body, one short hint.
+// ctaLabel overrides the generic "See: X" pattern with step-specific language.
 const TOUR_STEPS = [
   {
     key: "profile",
     stepNum: 1,
-    title: "Marcus's Athlete Profile",
-    message:
-      "This is Marcus Johnson — WR, Class of 2026, from Suwanee, GA. His family started right here. Before camps, before coaches, they locked in the basics: position, grad year, size, hometown. Everything that follows builds on this.",
-    hint: "Scroll down to see the full profile. In your account, this is where you'd enter your athlete's real information.",
+    title: "Get organized first",
+    message: "Put the basics in one place so every camp, coach interaction, and next step is easier to manage.",
+    hint: "Scroll to see Marcus's profile.",
     nextKey: "playbook",
     nextLabel: "Recruiting Playbook",
     nextPath: "/KnowledgeBase",
+    ctaLabel: "See the Playbook",
   },
   {
     key: "playbook",
     stepNum: 2,
-    title: "The Playbook",
-    message:
-      "Before diving into camps, Marcus's parents spent time here. The Playbook broke down how recruiting actually works — what happens when, and what families can control.",
-    hint: "Glance at the Recruiting Timeline — tap next when you're ready.",
+    title: "Understand the process earlier",
+    message: "This gives families a clearer picture of what matters, when it matters, and how to plan.",
+    hint: "Glance at the timeline, then continue.",
     nextKey: "discover",
     nextLabel: "Discover Camps",
     nextPath: "/Discover",
+    ctaLabel: "See Discover",
   },
   {
     key: "discover",
     stepNum: 3,
-    title: "Discover Camps",
-    message:
-      "Armed with a plan, they came here to find camps. Filter by division, state, or sport — then save the ones worth a closer look.",
-    hint: "Browse and save camps that fit your athlete's division target and timeline.",
+    title: "Turn searching into a real plan",
+    message: "Instead of bouncing between camp sites, families can compare options and save the right ones in one place.",
+    hint: "Browse camps and look for good-fit options.",
     nextKey: "mycamps",
     nextLabel: "My Camps",
     nextPath: "/MyCamps",
+    ctaLabel: "See My Camps",
   },
   {
     key: "mycamps",
     stepNum: 4,
-    title: "My Camps",
-    message:
-      "The camps Marcus's family saved and registered for all landed here. One running list — what's locked in, what's under consideration, what's already happened.",
-    hint: "This page shows Marcus's saved and registered camps. Yours will reflect your athlete's real camp activity.",
+    title: "Keep your options in one place",
+    message: "This is where saved and registered camps start to feel like a real camp plan, not scattered notes.",
+    hint: "Review what Marcus saved and registered.",
     nextKey: "calendar",
     nextLabel: "My Calendar",
     nextPath: "/Calendar",
+    ctaLabel: "See Calendar",
   },
   {
     key: "calendar",
     stepNum: 5,
-    title: "My Calendar",
-    message:
-      "With multiple camps on the list, the calendar became essential. They used this to check timing, avoid conflicts, and see the season at a glance.",
-    hint: "Tap any date to see what's scheduled. Color coding shows camp status at a glance.",
+    title: "Make camp season less chaotic",
+    message: "This helps families spot conflicts, timing issues, and travel pressure before plans get messy.",
+    hint: "Look at how camps line up across the calendar.",
     nextKey: "tracker",
     nextLabel: "Recruiting Tracker",
     nextPath: "/RecruitingJourney",
+    ctaLabel: "See Tracker",
   },
   {
     key: "tracker",
     stepNum: 6,
-    title: "Recruiting Tracker",
-    message:
-      "When coaches started to notice Marcus, his family logged it here. Follows, DMs, phone calls, camp invites — all captured so nothing slipped through the cracks.",
-    hint: "Scroll through Marcus's logged activity. Your tracker starts empty and grows as real recruiting contact begins.",
+    title: "Separate momentum from noise",
+    message: "This is where families track real recruiting activity so they can see what is actually progressing.",
+    hint: "Review Marcus's activity and how it builds over time.",
     nextKey: null,
-    nextLabel: "Explore Freely",
+    nextLabel: null,
     nextPath: "/Workspace",
+    ctaLabel: "Finish Tour",
   },
 ];
 
@@ -353,8 +355,8 @@ export default function GuidedTourOverlay({ tourKey }) {
           .dt-title  { font-size: 14px !important; margin-bottom: 5px !important; }
           .dt-message{ margin-bottom: 6px !important; line-height: 1.5 !important; }
           .dt-hint   { margin-bottom: 6px !important; font-size: 11px !important; }
-          .dt-navlock{ font-size: 10px !important; margin-bottom: 8px !important; }
           /* Stack actions vertically: amber CTA full-width on top, skip text below */
+          .dt-spacer  { display: none !important; }
           .dt-actions {
             flex-direction: column-reverse !important;
             gap: 6px !important;
@@ -509,19 +511,6 @@ export default function GuidedTourOverlay({ tourKey }) {
             </div>
           )}
 
-          {/* Nav lock note — phrased as an invitation, not a warning */}
-          <div
-            className="dt-navlock"
-            style={{
-              fontSize: 11,
-              color: C.navLock,
-              marginBottom: 14,
-              fontStyle: "italic",
-            }}
-          >
-            Explore the page — tap next when ready.
-          </div>
-
           {/* Actions */}
           <div className="dt-actions" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
@@ -540,7 +529,7 @@ export default function GuidedTourOverlay({ tourKey }) {
             >
               Skip to free explore
             </button>
-            <div style={{ flex: 1 }} />
+            <div className="dt-spacer" style={{ flex: 1 }} />
             <button
               className="dt-next-btn"
               onClick={goNext}
@@ -561,7 +550,7 @@ export default function GuidedTourOverlay({ tourKey }) {
                 boxShadow: "0 2px 10px rgba(232,160,32,0.35)",
               }}
             >
-              {step.nextKey ? `See: ${step.nextLabel}` : "Finish Tour"}
+              {step.ctaLabel}
               <ArrowRight style={{ width: 14, height: 14 }} />
             </button>
           </div>
