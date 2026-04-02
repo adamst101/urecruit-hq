@@ -220,6 +220,8 @@ export default function Home() {
           .hero-mobile-trust { display: flex !important; }
           /* Bring the CTA higher — reduce stacked padding on mobile */
           .hero-main-content { padding-top: 28px !important; padding-left: 20px !important; padding-right: 20px !important; }
+          /* Extra breathing room below CTA button before trust row */
+          .hero-cta-row { margin-bottom: 38px !important; }
           /* Fix single-line overflow on narrow screens */
           .hero-support-line { white-space: normal !important; }
         }
@@ -586,7 +588,7 @@ export default function Home() {
           <p className="hero-proof-strip hero-proof-strip-desktop" style={{ fontSize: 15, color: "#9ca3af", margin: 0 }}>
             100%&nbsp;<em style={{ fontStyle: "italic", color: "#d1d5db" }}>College</em>&nbsp;Coaching Staffs &nbsp;·&nbsp; Zero Club Camps &nbsp;·&nbsp; All Divisions
           </p>
-          <p className="hero-proof-strip hero-proof-strip-mobile" style={{ display: "none", fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.5 }}>
+          <p className="hero-proof-strip hero-proof-strip-mobile" style={{ display: "none", fontSize: 14, color: "#8898a8", margin: 0, lineHeight: 1.5 }}>
             Built for football families trying to make sense of recruiting earlier.
           </p>
         </div>
