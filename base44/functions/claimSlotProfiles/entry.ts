@@ -200,63 +200,101 @@ Deno.serve(async (req) => {
         return Response.json({ ok: false, error: "athletes array required for family slots" }, { status: 400 });
       }
 
-      for (const { athleteName, gradYear } of athletes) {
-        const matches = await findAthleteProfiles(sr, athleteName, gradYear);
-
-        if (matches.length === 0) {
-          errors.push(`AthleteProfile not found: ${athleteName} ${gradYear}`);
-          continue;
-        }
-
-        const record = matches[0];
-        const athleteId = String(record.id || record._id || record.uuid || "");
-        if (!athleteId) {
-          errors.push(`AthleteProfile has no id: ${athleteName} ${gradYear}`);
-          continue;
-        }
-
-        athleteProfileIds.push(athleteId);
-
-        // Update AthleteProfile.account_id (best-effort; may not persist for admin-created records)
-        try {
-          await sr.entities.AthleteProfile.update(athleteId, { account_id: realId });
-          updated++;
-        } catch (e) {
-          errors.push(`AthleteProfile ${athleteId} account_id update: ${(e as Error).message}`);
-          // Non-fatal — SchoolPreference link is the canonical mapping
-        }
-
-        // Update CoachRoster records referencing this athlete
-        const rosters = await sr.entities.CoachRoster.filter({ athlete_id: athleteId })
-          .catch(() => []) as any[];
-
-        for (const r of rosters) {
-          const rid = String(r.id || r._id || r.uuid || "");
-          if (!rid) continue;
-          try {
-            await sr.entities.CoachRoster.update(rid, { account_id: realId });
-            updated++;
-          } catch (e) {
-            errors.push(`CoachRoster ${rid} update: ${(e as Error).message}`);
-          }
-        }
-      }
-
-      // ── SchoolPreference link: write on claim, clear on release ─────────────
       if (isRelease) {
-        // Release: clear the link for the account that previously held this slot.
-        // previousRealId must be provided by the caller (FT page captures it before release).
-        if (previousRealId && !previousRealId.startsWith(FT_SYNTHETIC_PREFIX)) {
-          try {
-            await clearAthleteLink(sr, previousRealId);
-          } catch (e) {
-            errors.push(`clearAthleteLink for ${previousRealId}: ${(e as Error).message}`);
-          }
-        } else {
+        // ── RELEASE PATH ────────────────────────────────────────────────────────
+        // Do NOT use athlete_name + grad_year lookup here. The real user may have
+        // updated their profile, changing athlete_name so the static SLOT_MAP name
+        // no longer matches. Instead, use the SchoolPreference bridge to find the
+        // exact athleteId that was linked at claim time, then revert account_id.
+        if (!previousRealId || previousRealId.startsWith(FT_SYNTHETIC_PREFIX)) {
           errors.push("Release called without previousRealId — SchoolPreference link NOT cleared. Old account may still resolve this athlete.");
+        } else {
+          // Step 1: read the bridge to get the linked athleteId
+          const { athleteId: linkedAthleteId, prefId } = await readAthleteLink(sr, previousRealId);
+          if (linkedAthleteId) {
+            athleteProfileIds.push(linkedAthleteId);
+
+            // Step 2: revert AthleteProfile.account_id back to synthetic
+            try {
+              await sr.entities.AthleteProfile.update(linkedAthleteId, { account_id: realId });
+              updated++;
+            } catch (e) {
+              errors.push(`AthleteProfile ${linkedAthleteId} account_id revert: ${(e as Error).message}`);
+            }
+
+            // Step 3: revert CoachRoster.account_id back to synthetic
+            const rosters = await sr.entities.CoachRoster.filter({ athlete_id: linkedAthleteId })
+              .catch(() => []) as any[];
+            for (const r of rosters) {
+              const rid = String(r.id || r._id || r.uuid || "");
+              if (!rid) continue;
+              try {
+                await sr.entities.CoachRoster.update(rid, { account_id: realId });
+                updated++;
+              } catch (e) {
+                errors.push(`CoachRoster ${rid} revert: ${(e as Error).message}`);
+              }
+            }
+          } else {
+            errors.push(`No SchoolPreference link found for account=${previousRealId} — athlete profile account_id not reverted (may have already been cleared)`);
+          }
+
+          // Step 4: clear the SchoolPreference link regardless of whether we found the profile
+          if (prefId) {
+            try {
+              await clearAthleteLink(sr, previousRealId);
+            } catch (e) {
+              errors.push(`clearAthleteLink for ${previousRealId}: ${(e as Error).message}`);
+            }
+          }
         }
       } else {
-        // Claim: write the link for the new real account.
+        // ── CLAIM PATH ──────────────────────────────────────────────────────────
+        // Use athlete_name + grad_year to find the seed profile (it hasn't been
+        // modified yet since this is a fresh claim).
+        for (const { athleteName, gradYear } of athletes) {
+          const matches = await findAthleteProfiles(sr, athleteName, gradYear);
+
+          if (matches.length === 0) {
+            errors.push(`AthleteProfile not found: ${athleteName} ${gradYear}`);
+            continue;
+          }
+
+          const record = matches[0];
+          const athleteId = String(record.id || record._id || record.uuid || "");
+          if (!athleteId) {
+            errors.push(`AthleteProfile has no id: ${athleteName} ${gradYear}`);
+            continue;
+          }
+
+          athleteProfileIds.push(athleteId);
+
+          // Update AthleteProfile.account_id (best-effort; may not persist for admin-created records)
+          try {
+            await sr.entities.AthleteProfile.update(athleteId, { account_id: realId });
+            updated++;
+          } catch (e) {
+            errors.push(`AthleteProfile ${athleteId} account_id update: ${(e as Error).message}`);
+            // Non-fatal — SchoolPreference link is the canonical mapping
+          }
+
+          // Update CoachRoster records referencing this athlete
+          const rosters = await sr.entities.CoachRoster.filter({ athlete_id: athleteId })
+            .catch(() => []) as any[];
+
+          for (const r of rosters) {
+            const rid = String(r.id || r._id || r.uuid || "");
+            if (!rid) continue;
+            try {
+              await sr.entities.CoachRoster.update(rid, { account_id: realId });
+              updated++;
+            } catch (e) {
+              errors.push(`CoachRoster ${rid} update: ${(e as Error).message}`);
+            }
+          }
+        }
+
+        // Write SchoolPreference link for the new real account
         if (athleteProfileIds.length > 0) {
           try {
             await writeAthleteLink(sr, realId, athleteProfileIds[0]);
