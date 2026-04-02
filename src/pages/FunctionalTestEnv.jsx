@@ -24,9 +24,12 @@ import {
   checkSeedIntegrity,
 } from "../lib/ftEnvService";
 
-// All FT seed entity writes and function calls use ftProdBase44 — a client
-// hardcoded to functionsVersion:"prod" so records always land in the PROD
-// namespace regardless of any URL-param or localStorage overrides on base44.
+// All FT operations use ftProdBase44 — a client hardcoded to
+// functionsVersion:"prod" so every functions.invoke() call is routed to the
+// PROD function slot. Seed entity CRUD goes through manageFtSeeds (a PROD
+// server function) rather than client-side entity writes, because client-side
+// entity routing is determined by X-Origin-URL (window.location.href) and
+// would target TEST data when this page is accessed from the preview env.
 const SEED_CLIENT = ftProdBase44;
 
 // ---------------------------------------------------------------------------
@@ -224,6 +227,29 @@ export default function FunctionalTestEnv() {
       setLastSeeded(ts);
       setVerifyResult(null);
       addLog(`Reset complete — ${result.meta.totalRecords} records recreated (v${SEED_VERSION}) env=${result.meta.envLabel}`);
+
+      // ── Cross-check: compare family2 id from manageFtSeeds vs discoverSeeds ──
+      // manageFtSeeds_resetFamily2Id: id the server says it wrote to PROD
+      // discoverSeeds_family2Id:      id discoverSeeds (also via manageFtSeeds) can see
+      // If they match → server wrote and can read back correctly
+      // If discoverSeeds finds nothing → SR list scan not working post-write
+      const resetFamily2 = result.athletes?.find(a => a.account_id === "__hc_ft_family2");
+      const resetFamily2Id = resetFamily2?.id ?? null;
+      addLog(`[LIVECHECK] manageFtSeeds reset family2Id=${resetFamily2Id ?? "MISSING"}`);
+
+      try {
+        const discoverCheck = await discoverSeeds(SEED_CLIENT);
+        const discoverFamily2 = discoverCheck.athletes.find(a => a.account_id === "__hc_ft_family2");
+        const discoverFamily2Id = discoverFamily2?.id ?? null;
+        const match = resetFamily2Id && discoverFamily2Id && resetFamily2Id === discoverFamily2Id;
+        addLog(`[LIVECHECK] discoverSeeds family2Id=${discoverFamily2Id ?? "MISSING"} match=${match ?? "n/a"}`);
+        if (!match) {
+          addLog(`  WARN: family2 id mismatch — reset wrote "${resetFamily2Id}" but discover sees "${discoverFamily2Id}"`);
+        }
+      } catch (discErr) {
+        addLog(`[LIVECHECK] discoverSeeds cross-check failed: ${discErr?.message}`);
+      }
+
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
       addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} family2=${integrity.family2AthleteId ?? "MISSING"}`);
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));

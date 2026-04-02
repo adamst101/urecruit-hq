@@ -4,42 +4,43 @@
 // VISIBILITY MODEL — READ THIS BEFORE EDITING
 // ════════════════════════════════════════════════════════════════════════════
 //
-// There are two distinct auth contexts in this function:
+// FT seed records are created by manageFtSeeds/entry.ts via asServiceRole.
+// asServiceRole can ONLY see/mutate records it created. Therefore:
 //
-//   base44.entities.*          — caller's auth token (admin)
-//     • Can see and mutate ALL records, including admin-created seed profiles.
-//     • Use for: AthleteProfile, CoachRoster, Coach reads/writes.
+//   base44.asServiceRole.entities.*  — used for ALL seed entity ops
+//     • AthleteProfile, CoachRoster, Coach — seed records are SR-created,
+//       so SR filter/list/update/delete work on them.
+//     • SchoolPreference — bridge written via SR at claim time; readable
+//       and clearable via SR at release time.
 //
-//   base44.asServiceRole.entities.*  — service-role context
-//     • Can ONLY see/mutate records that asServiceRole itself created.
-//     • Admin-created AthleteProfile/CoachRoster/Coach records are permanently
-//       invisible to asServiceRole — filter/list/update/delete all return empty
-//       or "not found" for those records.
-//     • Use for: SchoolPreference only (written via asServiceRole at claim time,
-//       therefore readable/writable via asServiceRole at release time).
+//   base44.entities.*  (caller admin auth) — NOT used for seed entity ops
+//     • Would return empty for SR-created records ("not found" or []).
+//     • AthleteProfile account_id mutation is still attempted via caller auth
+//       as a best-effort non-critical operation; it will fail, which is fine —
+//       workspace access is via SchoolPreference bridge not account_id.
 //
 // ATHLETE LINK BRIDGE (why SchoolPreference exists):
-//   AthleteProfile seed records are admin-created. getMyAthleteProfiles runs
-//   as asServiceRole and can never find them by account_id. Fix: at claim time,
-//   write SchoolPreference { account_id: realId, athlete_id: seedProfileId }
-//   via asServiceRole. getMyAthleteProfiles reads it as Step 3.
+//   getMyAthleteProfiles Attempt 1 uses SR list scan. SR-created AthleteProfiles
+//   are visible there directly. SchoolPreference { account_id: realId,
+//   athlete_id: seedId } is also written via SR so that Step 3 finds it.
+//   Both paths lead to the same athlete — belt-and-suspenders.
 //
 // CANONICAL WRITE PATH:  this file (claimSlotProfiles)
-// CANONICAL READ PATH:   base44/functions/getMyAthleteProfiles/entry.ts — Step 3
-// SAFEGUARD:             base44/functions/saveSchoolPreferences/entry.ts preserves
-//                        athlete_id unless an explicit new value is provided.
+// CANONICAL READ PATH:   base44/functions/getMyAthleteProfiles/entry.ts
+// SEED WRITE PATH:       base44/functions/manageFtSeeds/entry.ts
+// SAFEGUARD:             base44/functions/saveSchoolPreferences/entry.ts
+//                        preserves athlete_id unless explicitly changed.
 // ════════════════════════════════════════════════════════════════════════════
 //
 // Admin-only. Body: {
 //   type: "family" | "coach",
 //   realId: string,                    — account ID to assign (syntheticId on release)
+//   syntheticId?: string,              — synthetic account ID of the slot
 //   previousRealId?: string,           — real account ID being released
 //   athletes?: { athleteName, gradYear }[],
 //   inviteCode?: string,
-//   knownAthleteProfileIds?: string[], — client-discovered IDs, preferred over name lookup
+//   knownAthleteProfileIds?: string[], — client-discovered IDs from manageFtSeeds discover
 // }
-// Returns: { ok, updated, errors, athleteProfileIds,
-//            athleteProfileReverted, schoolPreferenceCleared, rosterReverted }
 
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.23';
 
@@ -50,7 +51,7 @@ const ADMIN_EMAILS = [
 
 const FT_SYNTHETIC_PREFIX = "__hc_ft_";
 
-// ── SchoolPreference helpers (asServiceRole — these records were written via asServiceRole) ──
+// ── SchoolPreference helpers (SR — written via SR, readable/writable via SR) ──
 
 async function readAthleteLink(
   sr: any,
@@ -92,50 +93,50 @@ async function clearAthleteLink(sr: any, accountId: string): Promise<{ cleared: 
   return { cleared: 1 };
 }
 
-// ── AthleteProfile lookup (caller admin auth — can see admin-created records) ──
+// ── AthleteProfile lookup — SR only (seed records are SR-created) ─────────────
 
 async function findAthleteProfilesByName(
-  db: any,
+  sr: any,
   athleteName: string,
   gradYear: number,
 ): Promise<any[]> {
-  // Step 1: filter by name + grad_year (caller admin auth sees all records)
+  // Filter by name + grad_year via SR
   try {
-    const res = await db.entities.AthleteProfile.filter({
+    const res = await sr.entities.AthleteProfile.filter({
       athlete_name: athleteName,
       grad_year: gradYear,
     });
     if (Array.isArray(res) && res.length > 0) {
-      console.log(`[claimSlotProfiles] filter found ${res.length} profiles for "${athleteName}" ${gradYear}`);
+      console.log(`[claimSlotProfiles] SR filter found ${res.length} profiles for "${athleteName}" ${gradYear}`);
       return res;
     }
   } catch (_e) { /* fall through */ }
 
-  // Step 2: full list scan (catches records where filter index may lag)
+  // SR list-scan fallback
   try {
-    const all = await db.entities.AthleteProfile.list("-created_date", 2000);
+    const all = await sr.entities.AthleteProfile.list("-created_date", 2000);
     if (Array.isArray(all)) {
       const matched = all.filter((r: any) =>
         r.athlete_name === athleteName && String(r.grad_year) === String(gradYear)
       );
-      console.log(`[claimSlotProfiles] list-scan: ${all.length} total, ${matched.length} matched "${athleteName}" ${gradYear}`);
+      console.log(`[claimSlotProfiles] SR list-scan: ${all.length} total, ${matched.length} matched "${athleteName}" ${gradYear}`);
       return matched;
     }
   } catch (e) {
-    console.warn("[claimSlotProfiles] list-scan failed:", (e as Error).message);
+    console.warn("[claimSlotProfiles] SR list-scan failed:", (e as Error).message);
   }
 
   return [];
 }
 
-async function findCoachByInviteCode(db: any, inviteCode: string): Promise<any | null> {
+async function findCoachByInviteCode(sr: any, inviteCode: string): Promise<any | null> {
   try {
-    const res = await db.entities.Coach.filter({ invite_code: inviteCode });
+    const res = await sr.entities.Coach.filter({ invite_code: inviteCode });
     if (Array.isArray(res) && res.length > 0) return res[0];
   } catch (_e) { /* fall through */ }
 
   try {
-    const all = await db.entities.Coach.list("-created_date", 500);
+    const all = await sr.entities.Coach.list("-created_date", 500);
     if (Array.isArray(all)) return all.find((r: any) => r.invite_code === inviteCode) ?? null;
   } catch (_e) { /* ignore */ }
 
@@ -170,12 +171,11 @@ Deno.serve(async (req) => {
   }
 
   const isRelease = realId.startsWith(FT_SYNTHETIC_PREFIX);
-  const sr = base44.asServiceRole;   // SchoolPreference ops only
-  const db = base44;                  // AthleteProfile / CoachRoster / Coach ops (admin auth)
+  const sr = base44.asServiceRole;  // ALL seed entity ops — seeds are SR-created
 
   let updated = 0;
   let athleteProfileReverted = 0;
-  let schoolPreferenceUpdated = 0;  // 1 = bridge written (claim) or cleared (release)
+  let schoolPreferenceUpdated = 0;
   let rosterReverted = 0;
   let lookupMethod = "n/a";
   const errors: string[] = [];
@@ -190,13 +190,11 @@ Deno.serve(async (req) => {
       if (isRelease) {
         // ── RELEASE PATH ─────────────────────────────────────────────────────
         // Athlete ID resolution priority:
-        //   1. knownAthleteProfileIds from client (discoverSeeds ran with admin
-        //      auth on the browser side and found the actual record IDs)
-        //   2. SchoolPreference bridge (written at claim time via asServiceRole)
+        //   1. knownAthleteProfileIds from client (returned by manageFtSeeds discover)
+        //   2. SchoolPreference bridge (written at claim time via SR)
         //
-        // AthleteProfile + CoachRoster mutations use db (caller admin auth) —
-        // NOT asServiceRole, which cannot see admin-created records.
-        // SchoolPreference clear uses sr (asServiceRole) — it created that record.
+        // All AthleteProfile/CoachRoster reverts use SR — seeds are SR-created.
+        // SchoolPreference clear uses SR — it created that record.
 
         if (!previousRealId || previousRealId.startsWith(FT_SYNTHETIC_PREFIX)) {
           errors.push("Release called without valid previousRealId — no records reverted");
@@ -213,9 +211,6 @@ Deno.serve(async (req) => {
           console.log(`[claimSlotProfiles] release — previousRealId=${previousRealId} clientIds=${JSON.stringify(clientIds)} bridgeId=${bridgeAthleteId} idsToRevert=${JSON.stringify(idsToRevert)}`);
 
           // ── SchoolPreference bridge clear — canonical release operation ───────
-          // This is the only step that determines release success. The bridge
-          // clear is what getMyAthleteProfiles Step 3 checks; once it is gone
-          // the real account can no longer resolve the athlete profile.
           if (prefId) {
             try {
               const { cleared } = await clearAthleteLink(sr, previousRealId);
@@ -229,29 +224,27 @@ Deno.serve(async (req) => {
           }
 
           // ── Best-effort: revert AthleteProfile/CoachRoster account_id ────────
-          // Base44's permission model blocks updates to records owned by a different
-          // account_id even from admin callers, so these will often fail with "not found".
-          // They are NOT required for workspace isolation — all workspace data is
-          // filtered by athlete_id, not account_id. Failures are logged as warnings.
+          // Seeds are SR-created, so SR can update them. account_id revert is
+          // still non-critical since workspace data is filtered by athlete_id.
           if (idsToRevert.length > 0) {
             for (const aid of idsToRevert) {
               athleteProfileIds.push(aid);
 
               try {
-                await db.entities.AthleteProfile.update(aid, { account_id: realId });
+                await sr.entities.AthleteProfile.update(aid, { account_id: realId });
                 athleteProfileReverted++;
               } catch (e) {
                 errors.push(`AthleteProfile ${aid} revert failed [non-critical]: ${(e as Error).message}`);
               }
 
               try {
-                const rosters = await db.entities.CoachRoster.filter({ athlete_id: aid });
+                const rosters = await sr.entities.CoachRoster.filter({ athlete_id: aid });
                 const rosterList = Array.isArray(rosters) ? rosters : [];
                 for (const r of rosterList) {
                   const rid = String(r.id || r._id || r.uuid || "");
                   if (!rid) continue;
                   try {
-                    await db.entities.CoachRoster.update(rid, { account_id: realId });
+                    await sr.entities.CoachRoster.update(rid, { account_id: realId });
                     rosterReverted++;
                   } catch (e) {
                     errors.push(`CoachRoster ${rid} revert failed [non-critical]: ${(e as Error).message}`);
@@ -266,27 +259,23 @@ Deno.serve(async (req) => {
 
       } else {
         // ── CLAIM PATH ───────────────────────────────────────────────────────
-        // Athlete ID resolution — three tiers, most reliable first:
+        // Seeds are SR-created (via manageFtSeeds). All lookup tiers use SR.
         //
         //   Tier 1: knownAthleteProfileIds from client
-        //     Client ran discoverSeeds (admin auth, sees all records) and found
-        //     the actual IDs. Most reliable — no lookup needed.
+        //     Client called manageFtSeeds{action:discover} which used SR to
+        //     list all seed records and returned their IDs. Most reliable.
         //
-        //   Tier 2: account_id === syntheticId
-        //     Before claim, the seed athlete's account_id is the slot's synthetic
-        //     ID (e.g. "__hc_ft_family2"). Filter by that — canonical, stable,
-        //     unaffected by athlete_name changes or server-side filter limitations.
+        //   Tier 2: account_id === syntheticId via SR filter
+        //     Before claim, seed athlete has account_id = syntheticId.
+        //     SR can filter by that since SR created the record.
         //
-        //   Tier 3: athlete_name + grad_year
-        //     Last resort. Brittle if the name field changed. Only used if
-        //     Tiers 1 and 2 produce nothing.
+        //   Tier 3: athlete_name + grad_year via SR
+        //     Last resort. Used if Tiers 1 and 2 produce nothing.
 
         const clientIds = Array.isArray(knownAthleteProfileIds)
           ? knownAthleteProfileIds.filter(Boolean)
           : [];
 
-        // Hard fail: without clientIds or syntheticId there is no canonical way to
-        // find the seed athlete. Name-only lookup has failed before — don't retry it.
         if (clientIds.length === 0 && !syntheticId) {
           return Response.json({
             ok: false,
@@ -296,8 +285,7 @@ Deno.serve(async (req) => {
             updated: 0,
             errors: [
               "Claim rejected: neither knownAthleteProfileIds nor syntheticId was provided. " +
-              "The client must send at least one canonical identifier. " +
-              "Upgrade the FT Env page to pass syntheticId in the claim payload.",
+              "The client must send at least one canonical identifier.",
             ],
             athleteProfileIds: [],
             athleteProfileReverted: 0,
@@ -309,59 +297,57 @@ Deno.serve(async (req) => {
         let resolvedProfiles: any[] = [];
 
         if (clientIds.length > 0) {
-          // Tier 1 — client provided IDs directly
+          // Tier 1 — SR filter by id (seed records are SR-created, SR can find them)
           lookupMethod = "client_ids";
-          // Fetch full records so we have the complete profile object
           for (const id of clientIds) {
             try {
-              // Try filter by id first; if the SDK supports get-by-id use it
-              const found = await db.entities.AthleteProfile.filter({ id }).catch(() => null);
+              const found = await sr.entities.AthleteProfile.filter({ id }).catch(() => null);
               if (Array.isArray(found) && found.length > 0) {
                 resolvedProfiles.push(found[0]);
               } else {
-                // Minimal proxy object — we have the id, that's all we need for update
+                // ID known from client discover — use it even without full record
                 resolvedProfiles.push({ id });
               }
             } catch (_e) {
               resolvedProfiles.push({ id });
             }
           }
-          console.log(`[claimSlotProfiles] claim tier1 client_ids: ${JSON.stringify(clientIds)}`);
+          console.log(`[claimSlotProfiles] claim tier1 client_ids via SR: ${JSON.stringify(clientIds)}`);
         }
 
         if (resolvedProfiles.length === 0 && syntheticId) {
-          // Tier 2 — search by account_id === syntheticId (canonical seed state)
+          // Tier 2 — SR filter by account_id === syntheticId
           lookupMethod = "synthetic_account_id";
           try {
-            const res = await db.entities.AthleteProfile.filter({ account_id: syntheticId });
+            const res = await sr.entities.AthleteProfile.filter({ account_id: syntheticId });
             if (Array.isArray(res) && res.length > 0) {
               resolvedProfiles = res;
-              console.log(`[claimSlotProfiles] claim tier2 synthetic_id found ${res.length} profiles for account_id=${syntheticId}`);
+              console.log(`[claimSlotProfiles] claim tier2 SR filter found ${res.length} profiles for account_id=${syntheticId}`);
             } else {
-              // List-scan fallback for tier 2
-              const all = await db.entities.AthleteProfile.list("-created_date", 2000).catch(() => []);
+              // SR list-scan fallback for tier 2
+              const all = await sr.entities.AthleteProfile.list("-created_date", 2000).catch(() => []);
               if (Array.isArray(all)) {
                 resolvedProfiles = all.filter((r: any) => r.account_id === syntheticId);
-                console.log(`[claimSlotProfiles] claim tier2 list-scan: ${all.length} total, ${resolvedProfiles.length} matched account_id=${syntheticId}`);
+                console.log(`[claimSlotProfiles] claim tier2 SR list-scan: ${all.length} total, ${resolvedProfiles.length} matched account_id=${syntheticId}`);
               }
             }
           } catch (e) {
-            errors.push(`Tier2 syntheticId lookup failed: ${(e as Error).message}`);
+            errors.push(`Tier2 syntheticId SR lookup failed: ${(e as Error).message}`);
           }
         }
 
         if (resolvedProfiles.length === 0) {
-          // Tier 3 — name + grad_year (last resort)
+          // Tier 3 — SR name + grad_year
           lookupMethod = "name_fallback";
           for (const { athleteName, gradYear } of athletes) {
-            const matches = await findAthleteProfilesByName(db, athleteName, gradYear);
+            const matches = await findAthleteProfilesByName(sr, athleteName, gradYear);
             resolvedProfiles.push(...matches);
           }
-          console.log(`[claimSlotProfiles] claim tier3 name_fallback found ${resolvedProfiles.length} profiles`);
+          console.log(`[claimSlotProfiles] claim tier3 SR name_fallback found ${resolvedProfiles.length} profiles`);
         }
 
         if (resolvedProfiles.length === 0) {
-          errors.push(`AthleteProfile not found via any lookup method (tried: ${lookupMethod || "none"}) for syntheticId=${syntheticId}`);
+          errors.push(`AthleteProfile not found via any SR lookup (tried: ${lookupMethod}) for syntheticId=${syntheticId}`);
         }
 
         for (const record of resolvedProfiles) {
@@ -373,27 +359,25 @@ Deno.serve(async (req) => {
 
           athleteProfileIds.push(athleteId);
 
-          // Best-effort: update AthleteProfile.account_id.
-          // Base44 blocks updates to records owned by a different account_id even
-          // from admin callers ("not found"). This is NOT required for workspace
-          // access — getMyAthleteProfiles resolves the athlete via SchoolPreference
-          // bridge (Step 3), and all workspace filters use athlete_id not account_id.
+          // Best-effort: update AthleteProfile.account_id via SR (SR-created, SR can update).
+          // Not required for workspace access — workspace filters by athlete_id via
+          // SchoolPreference bridge. Logged as non-critical if it fails.
           try {
-            await db.entities.AthleteProfile.update(athleteId, { account_id: realId });
+            await sr.entities.AthleteProfile.update(athleteId, { account_id: realId });
             athleteProfileReverted++;
           } catch (e) {
             errors.push(`AthleteProfile ${athleteId} update failed [non-critical]: ${(e as Error).message}`);
           }
 
-          // Best-effort: update CoachRoster.account_id (same permission constraint).
+          // Best-effort: update CoachRoster.account_id via SR.
           try {
-            const rosters = await db.entities.CoachRoster.filter({ athlete_id: athleteId });
+            const rosters = await sr.entities.CoachRoster.filter({ athlete_id: athleteId });
             const rosterList = Array.isArray(rosters) ? rosters : [];
             for (const r of rosterList) {
               const rid = String(r.id || r._id || r.uuid || "");
               if (!rid) continue;
               try {
-                await db.entities.CoachRoster.update(rid, { account_id: realId });
+                await sr.entities.CoachRoster.update(rid, { account_id: realId });
                 rosterReverted++;
               } catch (e) {
                 errors.push(`CoachRoster ${rid} update failed [non-critical]: ${(e as Error).message}`);
@@ -405,10 +389,8 @@ Deno.serve(async (req) => {
         }
 
         // ── SchoolPreference bridge write — canonical claim operation ─────────
-        // This is what determines claim success. getMyAthleteProfiles Step 3
-        // reads SchoolPreference { account_id: realId, athlete_id: athleteId }
-        // written via asServiceRole. Once this is written the real account can
-        // resolve and access the athlete profile even if account_id is unchanged.
+        // getMyAthleteProfiles Step 3 reads this bridge. Attempt 1 (SR list scan)
+        // will also find the SR-created athlete directly. Both paths succeed.
         if (athleteProfileIds.length > 0) {
           try {
             await writeAthleteLink(sr, realId, athleteProfileIds[0]);
@@ -425,14 +407,14 @@ Deno.serve(async (req) => {
         return Response.json({ ok: false, error: "inviteCode required for coach slots" }, { status: 400 });
       }
 
-      // Coach records are admin-created — use caller admin auth
-      const record = await findCoachByInviteCode(db, inviteCode);
+      // Coach seed records are SR-created — use SR for lookup and update
+      const record = await findCoachByInviteCode(sr, inviteCode);
       if (!record) {
-        errors.push(`Coach not found: invite_code=${inviteCode}`);
+        errors.push(`Coach not found via SR: invite_code=${inviteCode}`);
       } else {
         const coachId = String(record.id || record._id || record.uuid || "");
         try {
-          await db.entities.Coach.update(coachId, { account_id: realId });
+          await sr.entities.Coach.update(coachId, { account_id: realId });
           updated++;
         } catch (e) {
           errors.push(`Coach ${coachId} update failed: ${(e as Error).message}`);

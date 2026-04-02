@@ -177,202 +177,139 @@ export const FT_TOPOLOGY = {
 };
 
 // ---------------------------------------------------------------------------
-// discoverSeeds — query all entities for __hc_ft_ records
+// discoverSeeds — delegates to manageFtSeeds server function (PROD slot).
+//
+// WHY SERVER-SIDE: FT seed records are SR-created in the PROD data namespace
+// via manageFtSeeds. Client-side entity reads use X-Origin-URL for routing,
+// which sends them to the TEST namespace when the page is in test/preview
+// context. The server function runs in PROD and uses SR to list its own
+// records, which are PROD-namespaced.
 // ---------------------------------------------------------------------------
 
 export async function discoverSeeds(base44) {
-  const [coaches, athletes, rosters, activities] = await Promise.all([
-    base44.entities.Coach.filter({}).catch(() => []),
-    base44.entities.AthleteProfile.filter({}).catch(() => []),
-    base44.entities.CoachRoster.filter({}).catch(() => []),
-    base44.entities.RecruitingActivity.filter({}).catch(() => []),
-  ]);
-
+  console.log("[ftEnvService] invoking manageFtSeeds action=discover");
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "discover" });
+  const d = res?.data ?? res;
+  console.log("[ftEnvService] manageFtSeeds discover raw:", JSON.stringify({
+    ok: d?.ok,
+    functionVersion: d?.functionVersion,
+    executionContext: d?.executionContext,
+    receivedFunctionsVersion: d?.receivedFunctionsVersion,
+    receivedAppId: d?.receivedAppId,
+    counts: { coaches: d?.coaches?.length, athletes: d?.athletes?.length, rosters: d?.rosters?.length, activities: d?.activities?.length },
+  }));
+  if (!d?.ok) throw new Error(d?.error || "manageFtSeeds discover failed");
   return {
-    coaches:    coaches.filter(r => _isSeedRecord(r, ["first_name", "last_name", "account_id", "invite_code"])),
-    athletes:   athletes.filter(r => _isSeedRecord(r, ["athlete_name", "account_id"])),
-    rosters:    rosters.filter(r => _isSeedRecord(r, ["invite_code", "account_id", "athlete_id", "coach_id"])),
-    activities: activities.filter(r => _isSeedRecord(r, ["account_id", "athlete_id", "coach_name"])),
+    coaches:    d.coaches    ?? [],
+    athletes:   d.athletes   ?? [],
+    rosters:    d.rosters    ?? [],
+    activities: d.activities ?? [],
   };
 }
 
-/** Returns true if any of the listed fields on record starts with SEED_PREFIX */
-function _isSeedRecord(record, fields) {
-  return fields.some(f => typeof record[f] === "string" && record[f].startsWith(SEED_PREFIX));
-}
-
 // ---------------------------------------------------------------------------
-// deleteAllSeeds
+// deleteAllSeeds — delegates to manageFtSeeds server function (PROD slot).
 // ---------------------------------------------------------------------------
 
 export async function deleteAllSeeds(base44) {
-  const found = await discoverSeeds(base44);
-  let deleted = 0;
-  const errors = [];
-
-  const allDeletions = [
-    ...found.activities.map(r => ({ entity: base44.entities.RecruitingActivity, id: r.id, label: `RecruitingActivity:${r.id}` })),
-    ...found.rosters.map(r =>    ({ entity: base44.entities.CoachRoster,        id: r.id, label: `CoachRoster:${r.id}` })),
-    ...found.athletes.map(r =>   ({ entity: base44.entities.AthleteProfile,     id: r.id, label: `AthleteProfile:${r.id}` })),
-    ...found.coaches.map(r =>    ({ entity: base44.entities.Coach,              id: r.id, label: `Coach:${r.id}` })),
-  ];
-
-  for (const item of allDeletions) {
-    try {
-      await item.entity.delete(item.id);
-      deleted++;
-    } catch (err) {
-      errors.push(`Failed to delete ${item.label}: ${err?.message || err}`);
-    }
-  }
-
-  return { deleted, errors };
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "delete" });
+  const d = res?.data ?? res;
+  if (!d?.ok) throw new Error(d?.error || "manageFtSeeds delete failed");
+  return { deleted: d.deleted ?? 0, errors: d.errors ?? [] };
 }
 
 // ---------------------------------------------------------------------------
-// seedTopology
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// checkSeedIntegrity — verify seed records are present and consistent
+// checkSeedIntegrity — delegates to manageFtSeeds server function (PROD slot).
 // ---------------------------------------------------------------------------
 
 export async function checkSeedIntegrity(base44) {
-  const { coaches, athletes, rosters, activities } = await discoverSeeds(base44);
-  const issues = [];
-
-  // Verify each family slot has at least one athlete with the canonical account_id
-  for (const [slotKey, slot] of Object.entries(SLOT_MAP)) {
-    if (slot.type !== "family") continue;
-    const slotAthletes = athletes.filter(a => a.account_id === slot.syntheticId);
-    if (slotAthletes.length === 0) {
-      issues.push(`${slotKey}: no athlete found with account_id === "${slot.syntheticId}"`);
-    }
-  }
-
-  if (coaches.length === 0) issues.push("No seed coaches found");
-  if (rosters.length === 0) issues.push("No seed rosters found");
-
-  const family2Athlete = athletes.find(a => a.account_id === "__hc_ft_family2");
-
-  console.log(
-    `[checkSeedIntegrity] coaches=${coaches.length} athletes=${athletes.length} ` +
-    `rosters=${rosters.length} activities=${activities.length} ` +
-    `family2=${family2Athlete?.id ?? "MISSING"} issues=${issues.length}`
-  );
-
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "integrity" });
+  const d = res?.data ?? res;
+  if (!d?.ok) throw new Error(d?.error || "manageFtSeeds integrity failed");
   return {
-    ok: issues.length === 0,
-    counts: { coaches: coaches.length, athletes: athletes.length, rosters: rosters.length, activities: activities.length },
-    family2AthleteId: family2Athlete?.id ?? null,
-    athleteIds: athletes.map(a => ({ id: a.id, accountId: a.account_id, name: a.athlete_name })),
-    issues,
-  };
-}
-
-export async function seedTopology(base44, { envLabel = "default" } = {}) {
-  console.log(`[seedTopology] Starting seed — env=${envLabel}`);
-
-  // Guard: refuse to seed if records already exist — prevents duplicate records
-  // accumulating across multiple seed runs. Use resetTopology to wipe and reseed.
-  const existing = await discoverSeeds(base44);
-  const totalExisting =
-    existing.coaches.length + existing.athletes.length +
-    existing.rosters.length + existing.activities.length;
-  if (totalExisting > 0) {
-    throw new Error(
-      `Seed records already exist (${totalExisting} found: ` +
-      `${existing.coaches.length} coaches, ${existing.athletes.length} athletes, ` +
-      `${existing.rosters.length} rosters, ${existing.activities.length} activities). ` +
-      `Use Reset & Reseed to delete existing records and start fresh.`
-    );
-  }
-
-  const seededAt = new Date().toISOString();
-
-  // --- Phase 1: Coaches ---
-  const coaches = [];
-  for (const def of FT_TOPOLOGY.coaches) {
-    const { _key, ...data } = def;
-    const record = await base44.entities.Coach.create(data);
-    coaches.push({ ...record, _key });
-  }
-
-  // Build lookup maps
-  const coachById  = Object.fromEntries(coaches.map(c => [c._key, c]));
-
-  // --- Phase 2: Athletes ---
-  const athletes = [];
-  for (const def of FT_TOPOLOGY.athletes) {
-    const { _key, family, ...data } = def;
-    const record = await base44.entities.AthleteProfile.create(data);
-    athletes.push({ ...record, _key, family });
-  }
-
-  const athleteById = Object.fromEntries(athletes.map(a => [a._key, a]));
-
-  // --- Phase 3: CoachRoster links ---
-  const rosters = [];
-  for (const def of FT_TOPOLOGY.rosters) {
-    const coach   = coachById[def._coachKey];
-    const athlete = athleteById[def._athleteKey];
-    if (!coach || !athlete) continue;
-
-    const record = await base44.entities.CoachRoster.create({
-      coach_id:     coach.id,
-      account_id:   athlete.account_id,
-      athlete_id:   athlete.id,
-      athlete_name: `${athlete.first_name} ${athlete.last_name}`,
-      invite_code:  coach.invite_code,
-      joined_at:    new Date().toISOString().slice(0, 10),
-    });
-    rosters.push(record);
-  }
-
-  // --- Phase 4: RecruitingActivity records ---
-  const activities = [];
-  for (const def of FT_TOPOLOGY.activities) {
-    const { _athleteKey, daysAgo, ...data } = def;
-    const athlete = athleteById[_athleteKey];
-    if (!athlete) continue;
-
-    const record = await base44.entities.RecruitingActivity.create({
-      ...data,
-      account_id:    athlete.account_id,
-      athlete_id:    athlete.id,
-      activity_date: isoDateAgo(daysAgo),
-    });
-    activities.push(record);
-  }
-
-  const totalRecords = coaches.length + athletes.length + rosters.length + activities.length;
-
-  console.log(
-    `[seedTopology] Complete — env=${envLabel} ` +
-    `coaches=${coaches.length} athletes=${athletes.length} ` +
-    `rosters=${rosters.length} activities=${activities.length} ` +
-    `total=${totalRecords} ` +
-    `athleteIds=${JSON.stringify(athletes.map(a => ({ id: a.id, account_id: a.account_id })))}`
-  );
-
-  return {
-    coaches,
-    athletes,
-    rosters,
-    activities,
-    meta: { seededAt, version: SEED_VERSION, totalRecords, envLabel },
+    ok:               d.ok,
+    counts:           d.counts           ?? { coaches: 0, athletes: 0, rosters: 0, activities: 0 },
+    family2AthleteId: d.family2AthleteId ?? null,
+    athleteIds:       d.athleteIds       ?? [],
+    issues:           d.issues           ?? [],
   };
 }
 
 // ---------------------------------------------------------------------------
-// resetTopology — delete existing seeds then reseed
+// seedTopology — delegates to manageFtSeeds server function (PROD slot).
+//
+// WHY SERVER-SIDE: Client-side entity creates route to TEST data when
+// the page is viewed in Base44's test/preview context (X-Origin-URL routing).
+// manageFtSeeds runs in PROD, uses SR, writes to PROD data namespace.
+// ---------------------------------------------------------------------------
+
+export async function seedTopology(base44, { envLabel = "default" } = {}) {
+  console.log("[ftEnvService] invoking manageFtSeeds action=seed");
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "seed" });
+  const d = res?.data ?? res;
+  console.log("[ftEnvService] manageFtSeeds seed raw:", JSON.stringify({
+    ok: d?.ok,
+    functionVersion: d?.functionVersion,
+    executionContext: d?.executionContext,
+    receivedFunctionsVersion: d?.receivedFunctionsVersion,
+    receivedAppId: d?.receivedAppId,
+    version: d?.version,
+    totalRecords: d?.totalRecords,
+    firstAthleteIds: d?.firstAthleteIds,
+    firstCoachIds: d?.firstCoachIds,
+    postWriteVerify: d?.postWriteVerify,
+    error: d?.error,
+  }));
+  if (!d?.ok) throw new Error(d?.error || "manageFtSeeds seed failed");
+  return {
+    coaches:    d.coaches    ?? [],
+    athletes:   d.athletes   ?? [],
+    rosters:    d.rosters    ?? [],
+    activities: d.activities ?? [],
+    meta: {
+      seededAt:     new Date().toISOString(),
+      version:      d.version   ?? SEED_VERSION,
+      totalRecords: d.totalRecords ?? 0,
+      envLabel,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// resetTopology — delegates to manageFtSeeds server function (PROD slot).
 // ---------------------------------------------------------------------------
 
 export async function resetTopology(base44, opts = {}) {
   const envLabel = opts.envLabel ?? "default";
-  console.log(`[resetTopology] Starting reset — env=${envLabel}`);
-  await deleteAllSeeds(base44);
-  return seedTopology(base44, { envLabel });
+  console.log("[ftEnvService] invoking manageFtSeeds action=reset");
+  const res = await base44.functions.invoke("manageFtSeeds", { action: "reset" });
+  const d = res?.data ?? res;
+  console.log("[ftEnvService] manageFtSeeds reset raw:", JSON.stringify({
+    ok: d?.ok,
+    functionVersion: d?.functionVersion,
+    executionContext: d?.executionContext,
+    receivedFunctionsVersion: d?.receivedFunctionsVersion,
+    receivedAppId: d?.receivedAppId,
+    version: d?.version,
+    totalRecords: d?.totalRecords,
+    firstAthleteIds: d?.firstAthleteIds,
+    firstCoachIds: d?.firstCoachIds,
+    postWriteVerify: d?.postWriteVerify,
+    error: d?.error,
+  }));
+  if (!d?.ok) throw new Error(d?.error || "manageFtSeeds reset failed");
+  return {
+    coaches:    d.coaches    ?? [],
+    athletes:   d.athletes   ?? [],
+    rosters:    d.rosters    ?? [],
+    activities: d.activities ?? [],
+    meta: {
+      seededAt:     new Date().toISOString(),
+      version:      d.version   ?? SEED_VERSION,
+      totalRecords: d.totalRecords ?? 0,
+      envLabel,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
