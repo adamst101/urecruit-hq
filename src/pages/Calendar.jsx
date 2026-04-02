@@ -437,6 +437,36 @@ export default function Calendar() {
     setCurrentWeek(sunday);
   }, [allUserCamps, campsByDate]);
 
+  // Debug diagnostics — set localStorage.__DEBUG_ATHLETE_IDENTITY__ = "1" to enable
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") !== "1") return;
+    const paidRows = Array.isArray(paidQuery?.data) ? paidQuery.data : [];
+    const filteredOut = paidRows.filter(r => {
+      const st = String(r?.intent_status || "").toLowerCase();
+      return st !== "favorite" && st !== "registered" && st !== "completed";
+    });
+    console.group("[Calendar DEBUG]");
+    console.log("athleteProfileId :", athleteId ?? "null — identity not resolved");
+    console.log("isPaid           :", isPaid, "| season.mode:", effectiveMode);
+    console.log("adminMode        :", isAdmin && !athleteId, "| sportId filter:", nf?.sportId ?? "none");
+    console.log("paidQuery.enabled:", !season.isLoading && isPaid && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)));
+    console.log("paidQuery.loading:", !!paidQuery?.isLoading);
+    console.log("intent rows      :", paidRows.length);
+    console.log("allUserCamps     :", allUserCamps.length, "(after intent_status + FilterSheet filters)");
+    console.log("listRows         :", listRows.length, "(after inline month/state/division filters)");
+    console.log("favCamps via memo:", paidRows.filter(r => String(r?.intent_status||"").toLowerCase() === "favorite").length);
+    console.log("regCamps via memo:", paidRows.filter(r => ["registered","completed"].includes(String(r?.intent_status||"").toLowerCase())).length);
+    if (filteredOut.length > 0) console.warn("filtered out (bad intent_status):", filteredOut.map(r => `${r.camp_id}:${r.intent_status}`));
+    if (paidRows.length === 0 && !paidQuery?.isLoading && isPaid && !!athleteId) {
+      console.warn("⚠ 0 rows for valid athleteId — getMyCampIntents may be returning empty; check network tab");
+    }
+    if (allUserCamps.length === 0 && paidRows.length > 0) {
+      console.warn("⚠ paidQuery has rows but allUserCamps=0 — intent_status or readActiveFlag filter removed them");
+    }
+    console.groupEnd();
+  }, [athleteId, isPaid, effectiveMode, paidQuery?.data, paidQuery?.isLoading, allUserCamps.length, listRows.length, nf?.sportId, season?.isLoading, isAdmin, isCoach, season?.accountId]);
+
   /* ── 7. Conflict detection ────────── */
 
   const favCamps = useMemo(

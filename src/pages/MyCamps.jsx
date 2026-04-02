@@ -369,6 +369,30 @@ export default function MyCamps() {
 
   const effectiveTab = pillFilter === "favorite" ? "favorites" : pillFilter === "registered" ? "registered" : activeTab;
 
+  // Debug diagnostics — set localStorage.__DEBUG_ATHLETE_IDENTITY__ = "1" to enable
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("__DEBUG_ATHLETE_IDENTITY__") !== "1") return;
+    const paidRows = Array.isArray(paidQuery?.data) ? paidQuery.data : [];
+    const filteredOut = paidRows.filter(r => {
+      const st = String(r?.intent_status || "").toLowerCase();
+      return st !== "favorite" && st !== "registered" && st !== "completed";
+    });
+    console.group("[MyCamps DEBUG]");
+    console.log("athleteProfileId :", athleteId ?? "null — identity not resolved");
+    console.log("isPaid           :", isPaid, "| isDemoMode:", isDemoMode, "| season.mode:", season?.mode);
+    console.log("paidQuery.enabled:", !season.isLoading && !isDemoMode && (!!athleteId || (isAdmin && !athleteId) || (isCoach && !!season?.accountId)));
+    console.log("paidQuery.loading:", !!paidQuery?.isLoading);
+    console.log("intent rows      :", paidRows.length);
+    console.log("favorites        :", favCamps.length, "| registered:", regCamps.length);
+    console.log("displayRows      :", displayRows.length, "(after tab+pill+inline filters)");
+    if (filteredOut.length > 0) console.warn("filtered out (bad intent_status):", filteredOut.map(r => `${r.camp_id}:${r.intent_status}`));
+    if (paidRows.length === 0 && !paidQuery?.isLoading && !isDemoMode && !!athleteId) {
+      console.warn("⚠ 0 rows for valid athleteId — getMyCampIntents may be returning empty; check network tab for getMyCampIntents call");
+    }
+    console.groupEnd();
+  }, [athleteId, isPaid, isDemoMode, paidQuery?.data, paidQuery?.isLoading, favCamps.length, regCamps.length, displayRows.length, season?.mode, season?.isLoading, isAdmin, isCoach]);
+
   function renderCampRow(r) {
     const campId = String(r?.camp_id || r?.id || "");
     const st = String(r?.intent_status || "").toLowerCase();

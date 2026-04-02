@@ -4,6 +4,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { setActiveAthleteId } from "../components/hooks/useActiveAthlete.jsx";
 import AdminRoute from "../components/auth/AdminRoute";
 import { base44 } from "../api/base44Client";
 import { ftProdBase44, FT_SEED_ENV } from "../api/ftProdBase44";
@@ -108,6 +110,7 @@ function fmtTs(iso) {
 
 export default function FunctionalTestEnv() {
   const nav = useNavigate();
+  const queryClient = useQueryClient();
 
   const [status,       setStatus]       = useState("unknown");
   const [seedData,     setSeedData]     = useState(null);
@@ -399,6 +402,18 @@ export default function FunctionalTestEnv() {
       setSavedMapping(slotKey, email, user.id);
       // Clear the email input on success
       setEmailInputs(prev => ({ ...prev, [slotKey]: "" }));
+      // Pin the FT athlete so MyCamps/Calendar always select the correct profile.
+      // Without this, getMyAthleteProfiles Step 1 may return both the admin's own
+      // athlete profile AND the FT athlete (both now have account_id = realId after
+      // claim). resolveBestProfile picks by list order, which is non-deterministic.
+      // Explicitly setting activeAthleteId forces an exact-ID match instead.
+      const ftPrimaryAthleteId = linkRaw?.athleteProfileIds?.[0] || knownAthleteIds[0] || null;
+      if (ftPrimaryAthleteId) {
+        setActiveAthleteId(ftPrimaryAthleteId);
+        queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
+        queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
+        addLog(`  Athlete pinned → ${ftPrimaryAthleteId} (MyCamps/Calendar will resolve FT athlete)`);
+      }
       await handleDiscover();
     } catch (err) {
       addLog(`Link ERROR (${slotKey}): ${err?.message || err}`);
@@ -406,7 +421,7 @@ export default function FunctionalTestEnv() {
       setLoading(false);
       setRunning(null);
     }
-  }, [emailInputs, addLog, handleDiscover]);
+  }, [emailInputs, addLog, handleDiscover, queryClient]);
 
   // previousRealId and knownAthleteIds are passed directly from the render at click time —
   // do NOT derive them inside this callback. handleRelease is memoized and its closure
@@ -448,6 +463,10 @@ export default function FunctionalTestEnv() {
         addLog(`Entitlement revoked (${revoked} record${revoked !== 1 ? "s" : ""} removed)`);
       }
       clearSavedMapping(slotKey);
+      // Clear the athlete pin so the admin's own profile is used after release.
+      setActiveAthleteId(null);
+      queryClient.invalidateQueries({ queryKey: ["athleteIdentity"], exact: false });
+      queryClient.invalidateQueries({ queryKey: ["myCampsSummaries_client"], exact: false });
       await handleDiscover();
     } catch (err) {
       addLog(`Release ERROR (${slotKey}): ${err?.message || err}`);
@@ -455,7 +474,7 @@ export default function FunctionalTestEnv() {
       setLoading(false);
       setRunning(null);
     }
-  }, [addLog, handleDiscover]);
+  }, [addLog, handleDiscover, queryClient]);
 
   // -------------------------------------------------------------------------
   // Derived display values
