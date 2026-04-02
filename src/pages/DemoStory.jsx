@@ -80,10 +80,11 @@ const POINTS = [
 
 function ProblemPoints() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "24px 0 0" }}>
+    <div className="ds-card-stack" style={{ display: "flex", flexDirection: "column", gap: 10, margin: "24px 0 0" }}>
       {POINTS.map((p, i) => (
         <div
           key={i}
+          className="ds-card"
           style={{
             display: "flex",
             gap: 14,
@@ -168,10 +169,11 @@ const PILLARS = [
 
 function PillarFramework() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "28px 0 0" }}>
+    <div className="ds-card-stack" style={{ display: "flex", flexDirection: "column", gap: 10, margin: "28px 0 0" }}>
       {PILLARS.map((p, i) => (
         <div
           key={i}
+          className="ds-card"
           style={{
             display: "flex",
             gap: 14,
@@ -313,6 +315,9 @@ export default function DemoStory() {
           .demo-story-next { width: 100% !important; justify-content: center !important; }
           .demo-story-nav  { flex-direction: column-reverse !important; gap: 8px !important; }
           .demo-story-back { width: 100% !important; justify-content: center !important; }
+          /* Tighter card stack — keeps 3 cards visible without heavy scroll */
+          .ds-card-stack { margin-top: 16px !important; gap: 8px !important; }
+          .ds-card       { padding: 11px 13px !important; }
         }
       `}</style>
 

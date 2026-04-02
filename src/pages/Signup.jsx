@@ -4,6 +4,7 @@
 // no backend function or Supabase credentials required.
 
 import React, { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { base44 } from "../api/base44Client";
 import { startMemberLogin } from "../components/utils/memberLogin.jsx";
@@ -66,6 +67,10 @@ function getCheckoutForm() {
 }
 
 export default function Signup() {
+  const loc = useLocation();
+  // Detect demo-tour entry so we can bridge the journey context
+  const fromTour = new URLSearchParams(loc.search).get("src") === "demo_tour_end";
+
   const [firstName, setFirstName] = useState(() => getCheckoutForm()?.parentFirstName || "");
   const [lastName, setLastName] = useState(() => getCheckoutForm()?.parentLastName || "");
   const [email, setEmail] = useState(() => getCheckoutForm()?.parentEmail || "");
@@ -202,6 +207,7 @@ export default function Signup() {
     <div style={OUTER}>
       <style>{FONTS}</style>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`@media (max-width: 520px) { .signup-card { padding: 24px 18px !important; } }`}</style>
 
       {/* Logo */}
       <div style={{ marginBottom: 32 }}>
@@ -220,7 +226,7 @@ export default function Signup() {
       </div>
 
       {/* Card */}
-      <div style={CARD}>
+      <div className="signup-card" style={CARD}>
         {registered ? (
           /* ── OTP verification state ── */
           <>
@@ -272,9 +278,31 @@ export default function Signup() {
         ) : (
           /* ── Registration form ── */
           <>
-            <h1 style={HEADING}>CREATE YOUR ACCOUNT</h1>
+            {fromTour && (
+              <div style={{
+                background: "rgba(232,160,32,0.07)",
+                border: "1px solid rgba(232,160,32,0.2)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                marginBottom: 20,
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#e8a020",
+                textAlign: "center",
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}>
+                ✦ Continuing from Marcus's demo
+              </div>
+            )}
+            <h1 style={HEADING}>
+              {fromTour ? "START YOUR WORKSPACE" : "CREATE YOUR ACCOUNT"}
+            </h1>
             <p style={{ color: "#9ca3af", fontSize: 14, margin: "0 0 28px" }}>
-              Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline.
+              {fromTour
+                ? "Your free account is where your family's recruiting journey actually begins."
+                : "Join uRecruitHQ to track camps, save favorites, and build your recruiting timeline."
+              }
             </p>
 
             <form onSubmit={handleSubmit} noValidate>

@@ -189,7 +189,7 @@ export default function Home() {
           .hero-h1-line1 { white-space: normal !important; font-size: 10vw !important; }
           .hero-h1-line2 { font-size: 10vw !important; }
           .hero-cols { flex-direction: column !important; margin-top: 8px !important; }
-          .hero-text-col { flex: 0 0 100% !important; width: 100% !important; }
+          .hero-text-col { flex: 0 0 100% !important; width: 100% !important; padding-top: 12px !important; }
           .hero-subtext { font-size: 16px !important; max-width: 100% !important; }
           .hero-subtext br { display: none !important; }
           .hero-proof-strip { font-size: 11px !important; }
@@ -206,6 +206,10 @@ export default function Home() {
           .hero-cta-secondary { display: none !important; }
           /* Show mobile trust nudge below primary CTA */
           .hero-mobile-trust { display: flex !important; }
+          /* Bring the CTA higher — reduce stacked padding on mobile */
+          .hero-main-content { padding-top: 28px !important; padding-left: 20px !important; padding-right: 20px !important; }
+          /* Fix single-line overflow on narrow screens */
+          .hero-support-line { white-space: normal !important; }
         }
         @media (min-width: 768px) and (max-width: 1024px) {
           .hero-h1-line1 { font-size: 3.2vw !important; }
@@ -345,7 +349,7 @@ export default function Home() {
         }} />
 
         {/* Main content */}
-        <div style={{
+        <div className="hero-main-content" style={{
           flex: 1,
           display: "flex",
           flexDirection: "column",
@@ -411,7 +415,7 @@ export default function Home() {
                 Understand recruiting earlier. Organize camps. Track progress with more clarity, structure, and confidence.
               </p>
               <div style={{ margin: "0 0 28px", maxWidth: 560 }}>
-                <p style={{ fontSize: 17, fontWeight: 600, color: "#d1d5db", lineHeight: 1.3, margin: 0, whiteSpace: "nowrap" }}>
+                <p className="hero-support-line" style={{ fontSize: 17, fontWeight: 600, color: "#d1d5db", lineHeight: 1.3, margin: 0, whiteSpace: "nowrap" }}>
                   Support the dream with more than camps, posts, and hope.
                 </p>
               </div>

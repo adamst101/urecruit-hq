@@ -43,7 +43,7 @@ const TOUR_STEPS = [
     title: "Discover Camps",
     message:
       "Armed with a plan, they came here to find camps. Filter by division, state, or sport — then save the ones worth a closer look.",
-    hint: "You can browse and favorite camps. Registration is available to Season Pass members.",
+    hint: "Browse and save camps that fit your athlete's division target and timeline.",
     nextKey: "mycamps",
     nextLabel: "My Camps",
     nextPath: "/MyCamps",
