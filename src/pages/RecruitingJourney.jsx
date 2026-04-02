@@ -509,8 +509,8 @@ export default function RecruitingJourney() {
       {isPreviewMode && (
         <DemoPreviewStrip
           payoff="Separate momentum from noise"
-          nextRoute="/Signup?src=demo_preview_tracker"
-          nextLabel="Start Free Account"
+          nextRoute="/Subscribe?source=demo_preview_tracker"
+          nextLabel="View Season Pass"
         />
       )}
       <style>{`

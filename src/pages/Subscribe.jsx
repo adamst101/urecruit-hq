@@ -214,6 +214,43 @@ export default function Subscribe() {
         </section>
       )}
 
+      {/* ── DEMO FUNNEL CONTINUITY ── */}
+      {(source === "demo_preview" || source === "demo_preview_tracker") && (
+        <section style={{ padding: "32px 24px 0", maxWidth: 480, margin: "0 auto" }}>
+          <div style={{
+            background: "rgba(232,160,32,0.06)",
+            border: "1px solid rgba(232,160,32,0.25)",
+            borderRadius: 12,
+            padding: "20px 24px",
+          }}>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              background: "rgba(232,160,32,0.12)",
+              border: "1px solid rgba(232,160,32,0.3)",
+              borderRadius: 6, padding: "3px 10px",
+              marginBottom: 14,
+            }}>
+              <span style={{
+                fontSize: 11, fontWeight: 700, color: "#e8a020",
+                textTransform: "uppercase", letterSpacing: "0.1em",
+              }}>
+                ✦ CONTINUING FROM MARCUS'S DEMO
+              </span>
+            </div>
+            <p style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 26, color: "#f9fafb",
+              letterSpacing: 1, margin: "0 0 8px",
+            }}>
+              READY TO START YOUR WORKSPACE?
+            </p>
+            <p style={{ fontSize: 15, color: "#9ca3af", lineHeight: 1.6, margin: 0 }}>
+              Choose your season pass to organize camps and track recruiting progress.
+            </p>
+          </div>
+        </section>
+      )}
+
       {/* ── HERO ── */}
       <section style={{ textAlign: "center", padding: "64px 24px 40px", maxWidth: 600, margin: "0 auto" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 3, color: "#e8a020", textTransform: "uppercase", marginBottom: 16 }}>

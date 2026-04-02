@@ -76,7 +76,7 @@ export default function DemoPreview() {
             style={{ height: 30, width: "auto", objectFit: "contain" }}
           />
           <button
-            onClick={() => nav("/Signup?src=demo_preview")}
+            onClick={() => nav("/Subscribe?source=demo_preview")}
             style={{
               background: "#e8a020",
               color: "#0a0e1a",
@@ -86,7 +86,7 @@ export default function DemoPreview() {
               cursor: "pointer", fontFamily: "inherit",
             }}
           >
-            Start Free
+            Get Season Pass
           </button>
         </div>
       </div>
@@ -150,7 +150,7 @@ export default function DemoPreview() {
         >
           <button
             className="dp-primary-cta"
-            onClick={() => nav("/Signup?src=demo_preview")}
+            onClick={() => nav("/Subscribe?source=demo_preview")}
             style={{
               background: "#e8a020",
               color: "#0a0e1a",
@@ -163,7 +163,7 @@ export default function DemoPreview() {
               boxShadow: "0 2px 18px rgba(232,160,32,0.35)",
             }}
           >
-            Start Your Family's Workspace
+            Get Season Pass
             <ArrowRight style={{ width: 16, height: 16 }} />
           </button>
           <button
