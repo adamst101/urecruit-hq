@@ -305,13 +305,13 @@ export default function FunctionalTestEnv() {
     if (!window.confirm(
       `Release slot "${slotKey}"? This reverts the account link and breaks any real login tied to it.`
     )) return;
-    // Capture real account ID before releasing so we can revoke entitlement
-    const { currentId: realIdBeforeRelease } = getSlotStatus(slotKey);
+    // Capture real account ID and athlete profile IDs before releasing
+    const { currentId: realIdBeforeRelease, athleteProfileIds: knownAthleteIds } = getSlotStatus(slotKey);
     setRunning(`release:${slotKey}`);
     setLoading(true);
     addLog(`Releasing slot "${slotKey}" back to synthetic ID…`);
     try {
-      const { updated, errors } = await releaseSlot(base44, slotKey, realIdBeforeRelease);
+      const { updated, errors } = await releaseSlot(base44, slotKey, realIdBeforeRelease, knownAthleteIds);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       addLog(`Slot "${slotKey}" released (${updated} records reverted)`);
       // Revoke the ft_seed entitlement so the account can no longer access Workspace
@@ -361,23 +361,29 @@ export default function FunctionalTestEnv() {
   const hayesCoach  = seedData?.coaches?.find(c => c.last_name === "Hayes");
   const riveraCoach = seedData?.coaches?.find(c => c.last_name === "Rivera");
 
-  // Returns { status: "not_seeded"|"unclaimed"|"claimed", currentId: string|null }
+  // Returns { status: "not_seeded"|"unclaimed"|"claimed", currentId: string|null, athleteProfileIds: string[] }
   const getSlotStatus = (slotKey) => {
     const slot = SLOT_MAP[slotKey];
-    if (!slot) return { status: "not_seeded", currentId: null };
+    if (!slot) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
     if (slot.type === "family") {
-      const def = slot.athletes[0];
-      const record = (seedData?.athletes || []).find(
-        a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear
-      );
-      if (!record) return { status: "not_seeded", currentId: null };
-      const isClaimed = record.account_id !== slot.syntheticId;
-      return { status: isClaimed ? "claimed" : "unclaimed", currentId: record.account_id };
+      // Collect all athlete profile records for this slot (any grad year in the slot's athletes list)
+      const athletes = seedData?.athletes || [];
+      const records = slot.athletes
+        .map(def => athletes.find(a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear))
+        .filter(Boolean);
+      if (records.length === 0) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
+      const primary = records[0];
+      const isClaimed = primary.account_id !== slot.syntheticId;
+      return {
+        status: isClaimed ? "claimed" : "unclaimed",
+        currentId: primary.account_id,
+        athleteProfileIds: records.map(r => r.id).filter(Boolean),
+      };
     } else {
       const record = (seedData?.coaches || []).find(c => c.invite_code === slot.inviteCode);
-      if (!record) return { status: "not_seeded", currentId: null };
+      if (!record) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
       const isClaimed = record.account_id !== slot.syntheticId;
-      return { status: isClaimed ? "claimed" : "unclaimed", currentId: record.account_id };
+      return { status: isClaimed ? "claimed" : "unclaimed", currentId: record.account_id, athleteProfileIds: [] };
     }
   };
 

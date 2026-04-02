@@ -179,10 +179,11 @@ Deno.serve(async (req) => {
     previousRealId?: string;
     athletes?: { athleteName: string; gradYear: number }[];
     inviteCode?: string;
+    knownAthleteProfileIds?: string[];
   } = {};
   try { body = await req.json(); } catch { /* no body */ }
 
-  const { type, realId, previousRealId, athletes, inviteCode } = body;
+  const { type, realId, previousRealId, athletes, inviteCode, knownAthleteProfileIds } = body;
 
   if (!type || !realId) {
     return Response.json({ ok: false, error: "type and realId are required" }, { status: 400 });
@@ -203,49 +204,63 @@ Deno.serve(async (req) => {
       if (isRelease) {
         // ── RELEASE PATH ────────────────────────────────────────────────────────
         // Do NOT use athlete_name + grad_year lookup here. The real user may have
-        // updated their profile, changing athlete_name so the static SLOT_MAP name
-        // no longer matches. Instead, use the SchoolPreference bridge to find the
-        // exact athleteId that was linked at claim time, then revert account_id.
+        // saved their profile, changing athlete_name so the static SLOT_MAP name
+        // no longer matches.
+        //
+        // ID resolution priority:
+        //   1. knownAthleteProfileIds from the client (FT page ran discoverSeeds
+        //      client-side and found the actual IDs — most reliable)
+        //   2. SchoolPreference bridge (written at claim time — reliable if present)
         if (!previousRealId || previousRealId.startsWith(FT_SYNTHETIC_PREFIX)) {
           errors.push("Release called without previousRealId — SchoolPreference link NOT cleared. Old account may still resolve this athlete.");
         } else {
-          // Step 1: read the bridge to get the linked athleteId
-          const { athleteId: linkedAthleteId, prefId } = await readAthleteLink(sr, previousRealId);
-          if (linkedAthleteId) {
-            athleteProfileIds.push(linkedAthleteId);
+          // Resolve athlete IDs: client-provided first, then SchoolPreference fallback
+          const clientIds = Array.isArray(knownAthleteProfileIds)
+            ? knownAthleteProfileIds.filter(Boolean)
+            : [];
+          const { athleteId: bridgeAthleteId, prefId } = await readAthleteLink(sr, previousRealId);
 
-            // Step 2: revert AthleteProfile.account_id back to synthetic
-            try {
-              await sr.entities.AthleteProfile.update(linkedAthleteId, { account_id: realId });
-              updated++;
-            } catch (e) {
-              errors.push(`AthleteProfile ${linkedAthleteId} account_id revert: ${(e as Error).message}`);
-            }
+          const idsToRevert = clientIds.length > 0 ? clientIds : (bridgeAthleteId ? [bridgeAthleteId] : []);
 
-            // Step 3: revert CoachRoster.account_id back to synthetic
-            const rosters = await sr.entities.CoachRoster.filter({ athlete_id: linkedAthleteId })
-              .catch(() => []) as any[];
-            for (const r of rosters) {
-              const rid = String(r.id || r._id || r.uuid || "");
-              if (!rid) continue;
+          if (idsToRevert.length > 0) {
+            for (const aid of idsToRevert) {
+              athleteProfileIds.push(aid);
+
+              // Revert AthleteProfile.account_id back to synthetic
               try {
-                await sr.entities.CoachRoster.update(rid, { account_id: realId });
+                await sr.entities.AthleteProfile.update(aid, { account_id: realId });
                 updated++;
               } catch (e) {
-                errors.push(`CoachRoster ${rid} revert: ${(e as Error).message}`);
+                errors.push(`AthleteProfile ${aid} account_id revert: ${(e as Error).message}`);
+              }
+
+              // Revert CoachRoster.account_id back to synthetic
+              const rosters = await sr.entities.CoachRoster.filter({ athlete_id: aid })
+                .catch(() => []) as any[];
+              for (const r of rosters) {
+                const rid = String(r.id || r._id || r.uuid || "");
+                if (!rid) continue;
+                try {
+                  await sr.entities.CoachRoster.update(rid, { account_id: realId });
+                  updated++;
+                } catch (e) {
+                  errors.push(`CoachRoster ${rid} revert: ${(e as Error).message}`);
+                }
               }
             }
           } else {
-            errors.push(`No SchoolPreference link found for account=${previousRealId} — athlete profile account_id not reverted (may have already been cleared)`);
+            errors.push(`No athlete IDs available for release of account=${previousRealId} — athlete profile account_id not reverted`);
           }
 
-          // Step 4: clear the SchoolPreference link regardless of whether we found the profile
+          // Clear the SchoolPreference link unconditionally (prefId may or may not exist)
           if (prefId) {
             try {
               await clearAthleteLink(sr, previousRealId);
             } catch (e) {
               errors.push(`clearAthleteLink for ${previousRealId}: ${(e as Error).message}`);
             }
+          } else {
+            console.log(`[claimSlotProfiles] no SchoolPreference found for ${previousRealId} — already cleared or never written`);
           }
         }
       } else {

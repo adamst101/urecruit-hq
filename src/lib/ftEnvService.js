@@ -622,7 +622,11 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
     const base = slot.type === "family"
       ? { type: "family", realId, athletes: slot.athletes.map(d => ({ athleteName: d.athleteName, gradYear: d.gradYear })) }
       : { type: "coach", realId, inviteCode: slot.inviteCode };
-    const body = opts.previousRealId ? { ...base, previousRealId: opts.previousRealId } : base;
+    const body = {
+      ...base,
+      ...(opts.previousRealId ? { previousRealId: opts.previousRealId } : {}),
+      ...(opts.knownAthleteProfileIds?.length ? { knownAthleteProfileIds: opts.knownAthleteProfileIds } : {}),
+    };
 
     const res = await base44.functions.invoke("claimSlotProfiles", body);
     if (res?.data?.ok !== undefined) {
@@ -697,10 +701,10 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
 // the server can clear its SchoolPreference athlete link on release.
 // ---------------------------------------------------------------------------
 
-export async function releaseSlot(base44, slotKey, previousRealId) {
+export async function releaseSlot(base44, slotKey, previousRealId, knownAthleteProfileIds = []) {
   const slot = SLOT_MAP[slotKey];
   if (!slot) throw new Error(`Unknown slot key: ${slotKey}`);
-  return claimSlot(base44, slotKey, slot.syntheticId, { previousRealId });
+  return claimSlot(base44, slotKey, slot.syntheticId, { previousRealId, knownAthleteProfileIds });
 }
 
 // ---------------------------------------------------------------------------
