@@ -18,12 +18,12 @@ const TOUR_STEPS = [
   {
     key: "profile",
     stepNum: 1,
-    title: "Athlete Profile",
+    title: "Marcus's Athlete Profile",
     message:
-      "Marcus's family started here. Before anything else, they locked in the basics — position, grad year, size, hometown. Everything that follows builds on this foundation.",
-    hint: "Browse the pre-filled profile. In your account, this is where you'd enter your athlete's real information.",
+      "This is Marcus Johnson — WR, Class of 2026, from Suwanee, GA. His family started right here. Before camps, before coaches, they locked in the basics: position, grad year, size, hometown. Everything that follows builds on this.",
+    hint: "Scroll down to see the full profile. In your account, this is where you'd enter your athlete's real information.",
     nextKey: "playbook",
-    nextLabel: "The Playbook",
+    nextLabel: "Recruiting Playbook",
     nextPath: "/KnowledgeBase",
   },
   {
@@ -139,7 +139,8 @@ export default function GuidedTourOverlay({ tourKey }) {
           @media (max-width: 520px) {
             .dt-pill {
               top: auto !important;
-              bottom: 80px !important;
+              /* 64px BottomNav + 8px gap + safe-area */
+              bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important;
               right: 16px !important;
             }
           }
@@ -188,6 +189,25 @@ export default function GuidedTourOverlay({ tourKey }) {
             width: 100% !important;
             max-width: 100% !important;
             border-radius: 20px 20px 0 0 !important;
+            /* Push content above the iPhone home indicator */
+            padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+          }
+          /* Stack actions vertically: amber CTA full-width on top, skip text below */
+          .dt-actions {
+            flex-direction: column-reverse !important;
+            gap: 6px !important;
+          }
+          .dt-next-btn {
+            width: 100% !important;
+            justify-content: center !important;
+            padding: 13px 18px !important;
+            font-size: 15px !important;
+          }
+          .dt-skip-btn {
+            width: 100% !important;
+            text-align: center !important;
+            padding: 6px 0 !important;
+            font-size: 13px !important;
           }
         }
       `}</style>
@@ -315,7 +335,7 @@ export default function GuidedTourOverlay({ tourKey }) {
             </div>
           )}
 
-          {/* Nav lock note */}
+          {/* Nav lock note — phrased as an invitation, not a warning */}
           <div
             style={{
               fontSize: 11,
@@ -324,12 +344,13 @@ export default function GuidedTourOverlay({ tourKey }) {
               fontStyle: "italic",
             }}
           >
-            Navigation unlocks after the tour.
+            Explore the page — tap next when ready.
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="dt-actions" style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
+              className="dt-skip-btn"
               onClick={skipTour}
               style={{
                 background: "none",
@@ -342,10 +363,11 @@ export default function GuidedTourOverlay({ tourKey }) {
                 flexShrink: 0,
               }}
             >
-              Skip tour
+              Skip to free explore
             </button>
             <div style={{ flex: 1 }} />
             <button
+              className="dt-next-btn"
               onClick={goNext}
               style={{
                 background: "#e8a020",
@@ -364,7 +386,7 @@ export default function GuidedTourOverlay({ tourKey }) {
                 boxShadow: "0 2px 10px rgba(232,160,32,0.35)",
               }}
             >
-              {step.nextKey ? `Next: ${step.nextLabel}` : "Explore Freely"}
+              {step.nextKey ? `See: ${step.nextLabel}` : "Explore Freely"}
               <ArrowRight style={{ width: 14, height: 14 }} />
             </button>
           </div>

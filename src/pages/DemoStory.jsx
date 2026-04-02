@@ -230,6 +230,21 @@ function Step2() {
         We give families a clearer playbook, better visibility into recruiting activity, and one place to plan camp season.
       </p>
       <PillarFramework />
+      {/* Bridge: introduce Marcus before handoff so the CTA lands with context */}
+      <div style={{
+        marginTop: 24,
+        padding: "14px 16px",
+        background: "rgba(232,160,32,0.06)",
+        border: "1px solid rgba(232,160,32,0.2)",
+        borderRadius: 10,
+      }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: "#e8a020", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>
+          WHAT COMES NEXT
+        </p>
+        <p style={{ fontSize: 14, color: "#c0cad8", lineHeight: 1.6, margin: 0 }}>
+          You'll follow <strong style={{ color: "#f1f5f9" }}>Marcus Johnson</strong> — a fictional WR from Suwanee, GA — and see how his family uses each feature. Takes about 2 minutes.
+        </p>
+      </div>
     </div>
   );
 }
@@ -432,7 +447,7 @@ export default function DemoStory() {
                 minHeight: 44,
               }}
             >
-              Start Marcus's Tour
+              See Marcus's Profile
               <ArrowRight style={{ width: 15, height: 15 }} />
             </button>
           ) : (
