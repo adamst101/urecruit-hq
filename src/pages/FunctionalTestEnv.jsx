@@ -194,7 +194,13 @@ export default function FunctionalTestEnv() {
       setLastSeeded(ts);
       addLog(`Seed complete — ${result.meta.totalRecords} records created (v${SEED_VERSION}) env=${result.meta.envLabel}`);
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} camps=${integrity.family2CampIntentCount ?? "?"}`);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} fav=${integrity.family2FavoriteCount ?? "?"} reg=${integrity.family2RegisteredCount ?? "?"} nullCampId=${integrity.family2NullCampIdCount ?? "?"}`);
+      if ((integrity.family2NullCampIdCount ?? 0) > 0) {
+        addLog(`  WARN: ${integrity.family2NullCampIdCount} CampIntent(s) have null camp_id — MyCamps join will fail. Run Reset to regenerate.`);
+      }
+      if (integrity.family2CampIntentIds?.length) {
+        integrity.family2CampIntentIds.forEach(ci => addLog(`  CampIntent id=${ci.id} status=${ci.status} camp_id=${ci.campId ?? "NULL"}`));
+      }
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {
@@ -251,7 +257,13 @@ export default function FunctionalTestEnv() {
       }
 
       const integrity = await checkSeedIntegrity(SEED_CLIENT);
-      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} camps=${integrity.family2CampIntentCount ?? "?"}`);
+      addLog(`Integrity: ${integrity.ok ? "OK" : "ISSUES"} — coaches=${integrity.counts.coaches} athletes=${integrity.counts.athletes} rosters=${integrity.counts.rosters} activities=${integrity.counts.activities} campIntents=${integrity.counts.campIntents ?? "?"} family2=${integrity.family2AthleteId ?? "MISSING"} acts=${integrity.family2ActivityCount ?? "?"} fav=${integrity.family2FavoriteCount ?? "?"} reg=${integrity.family2RegisteredCount ?? "?"} nullCampId=${integrity.family2NullCampIdCount ?? "?"}`);
+      if ((integrity.family2NullCampIdCount ?? 0) > 0) {
+        addLog(`  WARN: ${integrity.family2NullCampIdCount} CampIntent(s) have null camp_id — MyCamps join will fail. Run Reset to regenerate.`);
+      }
+      if (integrity.family2CampIntentIds?.length) {
+        integrity.family2CampIntentIds.forEach(ci => addLog(`  CampIntent id=${ci.id} status=${ci.status} camp_id=${ci.campId ?? "NULL"}`));
+      }
       if (!integrity.ok) integrity.issues.forEach(i => addLog(`  WARN: ${i}`));
       await handleAutoRelink();
     } catch (err) {

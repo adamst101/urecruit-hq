@@ -146,6 +146,38 @@ async function deleteAllSeeds(sr: any): Promise<{ deleted: number; errors: strin
       console.warn(`[manageFtSeeds] delete failed for ${item.label}:`, (err as Error).message);
     }
   }
+
+  // Extra CampIntent cleanup: also delete any SR-visible CampIntents for seed athlete IDs
+  // that were NOT caught by the isSeedRecord account_id filter. This covers CampIntents
+  // created via saveCampIntent (SR) after claim, which have account_id = real user ID.
+  const seedAthleteIds = found.athletes
+    .map((a: any) => String(a.id ?? a._id ?? "")).filter(Boolean);
+  const knownCiIds = new Set(found.campIntents.map((ci: any) => String(ci.id ?? ci._id ?? "")));
+  let extraCiDeleted = 0;
+  for (const athleteId of seedAthleteIds) {
+    try {
+      const extra = await sr.entities.CampIntent.filter({ athlete_id: athleteId }).catch(() => []);
+      for (const ci of (Array.isArray(extra) ? extra : [])) {
+        const ciId = String(ci.id ?? ci._id ?? "");
+        if (!ciId || knownCiIds.has(ciId)) continue;
+        try {
+          await sr.entities.CampIntent.delete(ciId);
+          deleted++;
+          extraCiDeleted++;
+          knownCiIds.add(ciId);
+          console.log(`[manageFtSeeds] delete: extra CampIntent ${ciId} (athlete=${athleteId} account_id=${ci.account_id} status=${ci.status})`);
+        } catch (err) {
+          errors.push(`Delete extra CampIntent ${ciId}: ${(err as Error).message}`);
+        }
+      }
+    } catch (e) {
+      errors.push(`CampIntent extra-cleanup for athlete ${athleteId}: ${(e as Error).message}`);
+    }
+  }
+  if (extraCiDeleted > 0) {
+    console.log(`[manageFtSeeds] delete: purged ${extraCiDeleted} extra CampIntent(s) by athlete_id`);
+  }
+
   console.log(`[manageFtSeeds] delete complete: ${deleted} deleted, ${errors.length} errors`);
   return { deleted, errors };
 }
@@ -221,18 +253,25 @@ async function seedAll(sr: any, base44?: any): Promise<{
   // Phase 5: CampIntents for family2 (athlete3) — 2 favorites + 1 registered
   // Uses base44.entities.Camp (caller auth, no X-Origin-URL from server → PROD data) to
   // find real Camp records, then creates CampIntents via SR so getMyCampIntents (SR) can find them.
+  //
+  // camp_id normalization: Base44 entity records may carry the ID in `.id` or `._id`.
+  // Always use `camp.id ?? camp._id` so camp_id is never stored as undefined/null —
+  // useCampSummariesClient skips any intent whose camp_id is falsy.
+  // Use `continue` (not `break`) so a missing camp at one index doesn't abort later ones.
   const campIntents: any[] = [];
   if (base44) {
     try {
       const family2 = athleteById["athlete3"];
       if (family2) {
-        const camps = await base44.entities.Camp.list("-created_date", 100).catch(() => []);
+        const family2Id = String(family2.id ?? family2._id ?? "");
+        const camps = await base44.entities.Camp.list("-created_date", 200).catch(() => []);
         const campList = Array.isArray(camps) ? camps : [];
         const footballCamps = campList.filter((c: any) =>
           (c.sport ?? "").toLowerCase().includes("football") ||
           (c.sport_id ?? "").toLowerCase().includes("football")
         );
         const targetCamps = (footballCamps.length >= 3 ? footballCamps : campList).slice(0, 3);
+        console.log(`[manageFtSeeds] Phase 5: campList=${campList.length} footballCamps=${footballCamps.length} targetCamps=${targetCamps.length}`);
         const intentDefs = [
           { campIndex: 0, status: "favorite"   },
           { campIndex: 1, status: "favorite"   },
@@ -240,15 +279,29 @@ async function seedAll(sr: any, base44?: any): Promise<{
         ];
         for (const { campIndex, status } of intentDefs) {
           const camp = targetCamps[campIndex];
-          if (!camp) break;
+          if (!camp) {
+            console.warn(`[manageFtSeeds] Phase 5: no camp at index ${campIndex} — skipping ${status} intent`);
+            continue;  // skip this intent; do not abort the loop
+          }
+          // Normalize: prefer .id, fall back to ._id, then event_key as last resort
+          const campId = String(camp.id ?? camp._id ?? "") || String(camp.event_key ?? "");
+          if (!campId) {
+            console.warn(`[manageFtSeeds] Phase 5: camp at index ${campIndex} has no id or event_key — skipping`);
+            continue;
+          }
           const record = await sr.entities.CampIntent.create({
-            camp_id:    camp.id,
-            athlete_id: String(family2.id ?? family2._id ?? ""),
+            camp_id:    campId,
+            athlete_id: family2Id,
             account_id: "__hc_ft_family2",
             status,
+            priority:   status === "registered" ? "high" : "medium",
           });
           campIntents.push(record);
-          console.log(`[manageFtSeeds] campIntent created: camp_id=${camp.id} athlete_id=${family2.id} status=${status}`);
+          console.log(`[manageFtSeeds] campIntent created: id=${record.id ?? record._id} camp_id=${campId} camp_name="${camp.camp_name ?? ""}" status=${status}`);
+        }
+        const nullCampIdCount = campIntents.filter((ci: any) => !ci.camp_id).length;
+        if (nullCampIdCount > 0) {
+          console.warn(`[manageFtSeeds] Phase 5 WARNING: ${nullCampIdCount} CampIntent(s) returned without camp_id — MyCamps join will fail`);
         }
       }
     } catch (e) {
@@ -271,6 +324,10 @@ async function checkIntegrity(sr: any): Promise<{
   family2AthleteId: string | null;
   family2ActivityCount: number;
   family2CampIntentCount: number;
+  family2FavoriteCount: number;
+  family2RegisteredCount: number;
+  family2NullCampIdCount: number;
+  family2CampIntentIds: { id: string; status: string; campId: string | null }[];
   athleteIds: { id: string; accountId: string; name: string }[];
   issues: string[];
 }> {
@@ -292,26 +349,40 @@ async function checkIntegrity(sr: any): Promise<{
   const family2Athlete = athletes.find((a: any) => a.account_id === "__hc_ft_family2");
   const family2AthleteId = family2Athlete ? String(family2Athlete.id ?? family2Athlete._id ?? "") : null;
 
-  const family2ActivityCount  = family2AthleteId
-    ? activities.filter((a: any)   => String(a.athlete_id ?? "") === family2AthleteId).length
+  const family2ActivityCount = family2AthleteId
+    ? activities.filter((a: any) => String(a.athlete_id ?? "") === family2AthleteId).length
     : 0;
-  const family2CampIntentCount = family2AthleteId
-    ? campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === family2AthleteId).length
-    : 0;
+
+  const family2CampIntents = family2AthleteId
+    ? campIntents.filter((ci: any) => String(ci.athlete_id ?? "") === family2AthleteId)
+    : [];
+  const family2CampIntentCount  = family2CampIntents.length;
+  const family2FavoriteCount    = family2CampIntents.filter((ci: any) => String(ci.status ?? "") === "favorite").length;
+  const family2RegisteredCount  = family2CampIntents.filter((ci: any) => String(ci.status ?? "") === "registered").length;
+  const family2NullCampIdCount  = family2CampIntents.filter((ci: any) => !ci.camp_id).length;
+  const family2CampIntentIds    = family2CampIntents.map((ci: any) => ({
+    id:     String(ci.id ?? ci._id ?? ""),
+    status: String(ci.status ?? ""),
+    campId: ci.camp_id ? String(ci.camp_id) : null,
+  }));
 
   if (!family2Athlete) {
     issues.push("family2 athlete missing");
   } else {
     if (!family2Athlete.sport_id) issues.push("family2 athlete missing sport_id");
     if (!family2Athlete.home_city) issues.push("family2 athlete missing home_city");
-    if (family2ActivityCount  === 0) issues.push("family2 athlete has zero RecruitingActivity records");
+    if (family2ActivityCount === 0) issues.push("family2 athlete has zero RecruitingActivity records");
     if (family2CampIntentCount === 0) issues.push("family2 athlete has zero CampIntent records");
+    if (family2NullCampIdCount > 0) issues.push(`family2 has ${family2NullCampIdCount} CampIntent(s) with null camp_id — MyCamps/Calendar join will fail`);
+    if (family2FavoriteCount < 2) issues.push(`family2 expected 2 favorite CampIntents, found ${family2FavoriteCount}`);
+    if (family2RegisteredCount < 1) issues.push(`family2 expected 1 registered CampIntent, found ${family2RegisteredCount}`);
   }
 
   console.log(
     `[manageFtSeeds] integrity: coaches=${coaches.length} athletes=${athletes.length} ` +
     `rosters=${rosters.length} activities=${activities.length} campIntents=${campIntents.length} ` +
-    `family2=${family2AthleteId ?? "MISSING"} family2Acts=${family2ActivityCount} family2Camps=${family2CampIntentCount} issues=${issues.length}`,
+    `family2=${family2AthleteId ?? "MISSING"} family2Acts=${family2ActivityCount} ` +
+    `family2Camps=${family2CampIntentCount} fav=${family2FavoriteCount} reg=${family2RegisteredCount} nullCampId=${family2NullCampIdCount} issues=${issues.length}`,
   );
 
   return {
@@ -323,6 +394,10 @@ async function checkIntegrity(sr: any): Promise<{
     family2AthleteId,
     family2ActivityCount,
     family2CampIntentCount,
+    family2FavoriteCount,
+    family2RegisteredCount,
+    family2NullCampIdCount,
+    family2CampIntentIds,
     athleteIds: athletes.map((a: any) => ({
       id: String(a.id ?? a._id ?? ""),
       accountId: String(a.account_id ?? ""),
