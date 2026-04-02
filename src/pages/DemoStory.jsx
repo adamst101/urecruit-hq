@@ -32,29 +32,28 @@ function Card1() {
         Your athlete says,<br />
         <span style={{ color: "#e8a020" }}>"I want to play<br />in college."</span>
       </h1>
-      <p style={{
-        fontSize: 16, color: "#94a3b8", lineHeight: 1.65,
-        margin: "0 0 32px", maxWidth: 480,
+      <p className="ds-c1-support" style={{
+        fontSize: 16, color: "#94a3b8", lineHeight: 1.6,
+        margin: "0 0 24px", maxWidth: 480,
       }}>
-        Most families suddenly need to figure out camps, timelines,
-        coach communication, and what actually matters — with no clear playbook.
+        Most families suddenly have to figure out camps, timelines, coach communication, and what actually matters next.
       </p>
 
-      {/* Visual: scattered problem indicators */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "0 0 8px" }}>
+      {/* Compact pain rows */}
+      <div className="ds-c1-pain-list" style={{ display: "flex", flexDirection: "column", gap: 8, margin: "0 0 8px" }}>
         {[
           { icon: "🗺️", text: "What do we do first?" },
           { icon: "🧩", text: "Which camps actually matter?" },
           { icon: "🔀", text: "How do we know if anything is real?" },
         ].map((item) => (
-          <div key={item.text} style={{
-            display: "flex", alignItems: "center", gap: 14,
+          <div key={item.text} className="ds-c1-pain-row" style={{
+            display: "flex", alignItems: "center", gap: 12,
             background: "rgba(255,255,255,0.03)",
             border: "1px solid #1a2535",
-            borderRadius: 10, padding: "13px 16px",
+            borderRadius: 8, padding: "10px 14px",
           }}>
-            <span style={{ fontSize: 20, flexShrink: 0 }}>{item.icon}</span>
-            <span style={{ fontSize: 14, color: "#c0cad8", lineHeight: 1.4 }}>{item.text}</span>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#c8d4e0", lineHeight: 1.3 }}>{item.text}</span>
           </div>
         ))}
       </div>
@@ -312,9 +311,15 @@ export default function DemoStory() {
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap');
         @media (max-width: 600px) {
           .ds-cta-btn { width: 100% !important; justify-content: center !important; }
-          .ds-nav     { flex-direction: column-reverse !important; gap: 8px !important; }
+          .ds-nav     { flex-direction: column-reverse !important; gap: 8px !important; padding-top: 12px !important; }
           .ds-back    { width: 100% !important; justify-content: center !important; }
           .ds-card-area { padding: 28px 20px 24px !important; }
+          /* Card 1 mobile tightening */
+          .ds-c1-support  { font-size: 15px !important; margin-bottom: 20px !important; }
+          .ds-c1-pain-list { gap: 6px !important; margin-bottom: 4px !important; }
+          .ds-c1-pain-row  { padding: 9px 12px !important; border-radius: 7px !important; }
+          /* Skip — present but quieter on mobile */
+          .ds-skip-btn { font-size: 11px !important; padding: 5px 10px !important; color: #64748b !important; border-color: rgba(30,45,69,0.6) !important; }
         }
       `}</style>
 
@@ -337,6 +342,7 @@ export default function DemoStory() {
             style={{ height: 30, width: "auto", objectFit: "contain" }}
           />
           <button
+            className="ds-skip-btn"
             onClick={skip}
             style={{
               background: "rgba(255,255,255,0.04)",
