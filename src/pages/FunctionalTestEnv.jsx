@@ -280,20 +280,23 @@ export default function FunctionalTestEnv() {
     try {
       const user = await lookupAccountByEmail(base44, email);
       if (!user?.id) throw new Error(`No account found for email: ${email}`);
-      addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}" athleteIds=[${knownAthleteIds.join(",")}]`);
+      const syntheticId = SLOT_MAP[slotKey]?.syntheticId;
+      addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}" syntheticId=${syntheticId} athleteIds=[${knownAthleteIds.join(",")}]`);
       const linkResult = await claimSlot(base44, slotKey, user.id, { knownAthleteProfileIds: knownAthleteIds });
       const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted, _raw: linkRaw } = linkResult;
+      const lookupMethod = linkRaw?.lookupMethod ?? "unknown";
       addLog(`[LIVECHECK] claimSlotProfiles (claim) raw: ${JSON.stringify(linkRaw ?? linkResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
       if (updated > 0) {
         const detail = [
+          `method=${lookupMethod}`,
           athleteProfileReverted != null ? `athlete=${athleteProfileReverted}` : null,
           schoolPreferenceCleared != null ? `schoolPref=${schoolPreferenceCleared}` : null,
           rosterReverted != null ? `roster=${rosterReverted}` : null,
         ].filter(Boolean).join(" ");
-        addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated${detail ? ` — ${detail}` : ""})`);
+        addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated — ${detail})`);
       } else {
-        addLog(`Link FAILED for "${slotKey}" — 0 records updated${errors.length ? " (see WARNs)" : ""}`);
+        addLog(`Link FAILED for "${slotKey}" — 0 records updated (method=${lookupMethod})${errors.length ? " (see WARNs)" : ""}`);
       }
       // Grant entitlement so the account can reach Workspace
       const { granted, seasonYear, reason } = await grantTestEntitlement(base44, user.id);
@@ -400,11 +403,15 @@ export default function FunctionalTestEnv() {
     const slot = SLOT_MAP[slotKey];
     if (!slot) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
     if (slot.type === "family") {
-      // Collect all athlete profile records for this slot (any grad year in the slot's athletes list)
       const athletes = seedData?.athletes || [];
-      const records = slot.athletes
-        .map(def => athletes.find(a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear))
-        .filter(Boolean);
+      // Primary: match by account_id === syntheticId (canonical, works for unclaimed slots regardless of name changes).
+      // Fallback: athlete_name + grad_year (for claimed slots where account_id has changed to a real ID).
+      const byAccountId = athletes.filter(a => a.account_id === slot.syntheticId);
+      const records = byAccountId.length > 0
+        ? byAccountId
+        : slot.athletes
+            .map(def => athletes.find(a => a.athlete_name === def.athleteName && a.grad_year === def.gradYear))
+            .filter(Boolean);
       if (records.length === 0) return { status: "not_seeded", currentId: null, athleteProfileIds: [] };
       const primary = records[0];
       const isClaimed = primary.account_id !== slot.syntheticId;

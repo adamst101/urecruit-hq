@@ -177,6 +177,7 @@ Deno.serve(async (req) => {
   let athleteProfileReverted = 0;
   let schoolPreferenceCleared = 0;
   let rosterReverted = 0;
+  let lookupMethod = "n/a";
   const errors: string[] = [];
   const athleteProfileIds: string[] = [];
 
@@ -281,8 +282,28 @@ Deno.serve(async (req) => {
           ? knownAthleteProfileIds.filter(Boolean)
           : [];
 
+        // Hard fail: without clientIds or syntheticId there is no canonical way to
+        // find the seed athlete. Name-only lookup has failed before — don't retry it.
+        if (clientIds.length === 0 && !syntheticId) {
+          return Response.json({
+            ok: false,
+            functionVersion: "claimSlotProfiles_v_livecheck_1",
+            state: "missing_canonical_identifiers",
+            lookupMethod: "none",
+            updated: 0,
+            errors: [
+              "Claim rejected: neither knownAthleteProfileIds nor syntheticId was provided. " +
+              "The client must send at least one canonical identifier. " +
+              "Upgrade the FT Env page to pass syntheticId in the claim payload.",
+            ],
+            athleteProfileIds: [],
+            athleteProfileReverted: 0,
+            schoolPreferenceCleared: 0,
+            rosterReverted: 0,
+          });
+        }
+
         let resolvedProfiles: any[] = [];
-        let lookupMethod = "";
 
         if (clientIds.length > 0) {
           // Tier 1 — client provided IDs directly
@@ -421,6 +442,7 @@ Deno.serve(async (req) => {
       ok: false,
       functionVersion: "claimSlotProfiles_v_livecheck_1",
       error: (e as Error).message,
+      lookupMethod,
       updated, errors, athleteProfileIds,
       athleteProfileReverted, schoolPreferenceCleared, rosterReverted,
     }, { status: 500 });
@@ -429,6 +451,7 @@ Deno.serve(async (req) => {
   return Response.json({
     ok: true,
     functionVersion: "claimSlotProfiles_v_livecheck_1",
+    lookupMethod,
     updated,
     errors,
     athleteProfileIds,
