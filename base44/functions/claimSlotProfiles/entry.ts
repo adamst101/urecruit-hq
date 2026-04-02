@@ -155,6 +155,7 @@ Deno.serve(async (req) => {
   let body: {
     type?: string;
     realId?: string;
+    syntheticId?: string;
     previousRealId?: string;
     athletes?: { athleteName: string; gradYear: number }[];
     inviteCode?: string;
@@ -162,7 +163,7 @@ Deno.serve(async (req) => {
   } = {};
   try { body = await req.json(); } catch { /* no body */ }
 
-  const { type, realId, previousRealId, athletes, inviteCode, knownAthleteProfileIds } = body;
+  const { type, realId, syntheticId, previousRealId, athletes, inviteCode, knownAthleteProfileIds } = body;
 
   if (!type || !realId) {
     return Response.json({ ok: false, error: "type and realId are required" }, { status: 400 });
@@ -261,30 +262,101 @@ Deno.serve(async (req) => {
 
       } else {
         // ── CLAIM PATH ───────────────────────────────────────────────────────
-        // Find profiles by name (caller admin auth — sees admin-created records).
-        for (const { athleteName, gradYear } of athletes) {
-          const matches = await findAthleteProfilesByName(db, athleteName, gradYear);
+        // Athlete ID resolution — three tiers, most reliable first:
+        //
+        //   Tier 1: knownAthleteProfileIds from client
+        //     Client ran discoverSeeds (admin auth, sees all records) and found
+        //     the actual IDs. Most reliable — no lookup needed.
+        //
+        //   Tier 2: account_id === syntheticId
+        //     Before claim, the seed athlete's account_id is the slot's synthetic
+        //     ID (e.g. "__hc_ft_family2"). Filter by that — canonical, stable,
+        //     unaffected by athlete_name changes or server-side filter limitations.
+        //
+        //   Tier 3: athlete_name + grad_year
+        //     Last resort. Brittle if the name field changed. Only used if
+        //     Tiers 1 and 2 produce nothing.
 
-          if (matches.length === 0) {
-            errors.push(`AthleteProfile not found: ${athleteName} ${gradYear}`);
-            continue;
+        const clientIds = Array.isArray(knownAthleteProfileIds)
+          ? knownAthleteProfileIds.filter(Boolean)
+          : [];
+
+        let resolvedProfiles: any[] = [];
+        let lookupMethod = "";
+
+        if (clientIds.length > 0) {
+          // Tier 1 — client provided IDs directly
+          lookupMethod = "client_ids";
+          // Fetch full records so we have the complete profile object
+          for (const id of clientIds) {
+            try {
+              // Try filter by id first; if the SDK supports get-by-id use it
+              const found = await db.entities.AthleteProfile.filter({ id }).catch(() => null);
+              if (Array.isArray(found) && found.length > 0) {
+                resolvedProfiles.push(found[0]);
+              } else {
+                // Minimal proxy object — we have the id, that's all we need for update
+                resolvedProfiles.push({ id });
+              }
+            } catch (_e) {
+              resolvedProfiles.push({ id });
+            }
           }
+          console.log(`[claimSlotProfiles] claim tier1 client_ids: ${JSON.stringify(clientIds)}`);
+        }
 
-          const record = matches[0];
+        if (resolvedProfiles.length === 0 && syntheticId) {
+          // Tier 2 — search by account_id === syntheticId (canonical seed state)
+          lookupMethod = "synthetic_account_id";
+          try {
+            const res = await db.entities.AthleteProfile.filter({ account_id: syntheticId });
+            if (Array.isArray(res) && res.length > 0) {
+              resolvedProfiles = res;
+              console.log(`[claimSlotProfiles] claim tier2 synthetic_id found ${res.length} profiles for account_id=${syntheticId}`);
+            } else {
+              // List-scan fallback for tier 2
+              const all = await db.entities.AthleteProfile.list("-created_date", 2000).catch(() => []);
+              if (Array.isArray(all)) {
+                resolvedProfiles = all.filter((r: any) => r.account_id === syntheticId);
+                console.log(`[claimSlotProfiles] claim tier2 list-scan: ${all.length} total, ${resolvedProfiles.length} matched account_id=${syntheticId}`);
+              }
+            }
+          } catch (e) {
+            errors.push(`Tier2 syntheticId lookup failed: ${(e as Error).message}`);
+          }
+        }
+
+        if (resolvedProfiles.length === 0) {
+          // Tier 3 — name + grad_year (last resort)
+          lookupMethod = "name_fallback";
+          for (const { athleteName, gradYear } of athletes) {
+            const matches = await findAthleteProfilesByName(db, athleteName, gradYear);
+            resolvedProfiles.push(...matches);
+          }
+          console.log(`[claimSlotProfiles] claim tier3 name_fallback found ${resolvedProfiles.length} profiles`);
+        }
+
+        if (resolvedProfiles.length === 0) {
+          errors.push(`AthleteProfile not found via any lookup method (tried: ${lookupMethod || "none"}) for syntheticId=${syntheticId}`);
+        }
+
+        for (const record of resolvedProfiles) {
           const athleteId = String(record.id || record._id || record.uuid || "");
           if (!athleteId) {
-            errors.push(`AthleteProfile has no id: ${athleteName} ${gradYear}`);
+            errors.push(`AthleteProfile has no id (lookupMethod=${lookupMethod})`);
             continue;
           }
 
           athleteProfileIds.push(athleteId);
+          console.log(`[claimSlotProfiles] claim updating athleteId=${athleteId} account_id -> ${realId} (method=${lookupMethod})`);
 
           // Update AthleteProfile.account_id (caller admin auth)
           try {
             await db.entities.AthleteProfile.update(athleteId, { account_id: realId });
+            athleteProfileReverted++;
             updated++;
           } catch (e) {
-            errors.push(`AthleteProfile ${athleteId} claim update failed: ${(e as Error).message}`);
+            errors.push(`AthleteProfile ${athleteId} update failed (${lookupMethod}): ${(e as Error).message}`);
             // Non-fatal — SchoolPreference link is the canonical mapping
           }
 
@@ -297,9 +369,10 @@ Deno.serve(async (req) => {
               if (!rid) continue;
               try {
                 await db.entities.CoachRoster.update(rid, { account_id: realId });
+                rosterReverted++;
                 updated++;
               } catch (e) {
-                errors.push(`CoachRoster ${rid} claim update failed: ${(e as Error).message}`);
+                errors.push(`CoachRoster ${rid} update failed: ${(e as Error).message}`);
               }
             }
           } catch (e) {
@@ -312,6 +385,7 @@ Deno.serve(async (req) => {
         if (athleteProfileIds.length > 0) {
           try {
             await writeAthleteLink(sr, realId, athleteProfileIds[0]);
+            schoolPreferenceCleared++;  // reusing field as "schoolPref written" count
           } catch (e) {
             errors.push(`writeAthleteLink(${realId}) failed: ${(e as Error).message}`);
           }

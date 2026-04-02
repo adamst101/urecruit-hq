@@ -270,7 +270,8 @@ export default function FunctionalTestEnv() {
   // -------------------------------------------------------------------------
   // Link slot by email / Release slot
   // -------------------------------------------------------------------------
-  const handleLinkByEmail = useCallback(async (slotKey) => {
+  // knownAthleteIds passed from render (live seedData) to avoid stale closure.
+  const handleLinkByEmail = useCallback(async (slotKey, knownAthleteIds = []) => {
     const email = (emailInputs[slotKey] || "").trim();
     if (!email) { addLog(`Link ERROR (${slotKey}): no email entered`); return; }
     setRunning(`link:${slotKey}`);
@@ -279,10 +280,21 @@ export default function FunctionalTestEnv() {
     try {
       const user = await lookupAccountByEmail(base44, email);
       if (!user?.id) throw new Error(`No account found for email: ${email}`);
-      addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}"…`);
-      const { updated, errors } = await claimSlot(base44, slotKey, user.id);
+      addLog(`Found account ${user.id} (${user.email}) — linking slot "${slotKey}" athleteIds=[${knownAthleteIds.join(",")}]`);
+      const linkResult = await claimSlot(base44, slotKey, user.id, { knownAthleteProfileIds: knownAthleteIds });
+      const { updated, errors, athleteProfileReverted, schoolPreferenceCleared, rosterReverted, _raw: linkRaw } = linkResult;
+      addLog(`[LIVECHECK] claimSlotProfiles (claim) raw: ${JSON.stringify(linkRaw ?? linkResult)}`);
       if (errors.length > 0) errors.forEach(e => addLog(`  WARN: ${e}`));
-      addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated)`);
+      if (updated > 0) {
+        const detail = [
+          athleteProfileReverted != null ? `athlete=${athleteProfileReverted}` : null,
+          schoolPreferenceCleared != null ? `schoolPref=${schoolPreferenceCleared}` : null,
+          rosterReverted != null ? `roster=${rosterReverted}` : null,
+        ].filter(Boolean).join(" ");
+        addLog(`Slot "${slotKey}" linked to ${user.email} (${updated} records updated${detail ? ` — ${detail}` : ""})`);
+      } else {
+        addLog(`Link FAILED for "${slotKey}" — 0 records updated${errors.length ? " (see WARNs)" : ""}`);
+      }
       // Grant entitlement so the account can reach Workspace
       const { granted, seasonYear, reason } = await grantTestEntitlement(base44, user.id);
       addLog(granted
@@ -884,7 +896,7 @@ export default function FunctionalTestEnv() {
                               placeholder="user@example.com"
                               value={emailVal}
                               onChange={e => setEmailInputs(prev => ({ ...prev, [slotKey]: e.target.value }))}
-                              onKeyDown={e => { if (e.key === "Enter") handleLinkByEmail(slotKey); }}
+                              onKeyDown={e => { if (e.key === "Enter") handleLinkByEmail(slotKey, slotAthleteIds); }}
                               disabled={isRunning}
                               style={{
                                 width: "100%", padding: "5px 9px", borderRadius: 6, fontSize: 13,
@@ -911,7 +923,7 @@ export default function FunctionalTestEnv() {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleLinkByEmail(slotKey)}
+                              onClick={() => handleLinkByEmail(slotKey, slotAthleteIds)}
                               disabled={isRunning || !emailVal.trim()}
                               style={{
                                 padding: "4px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600,

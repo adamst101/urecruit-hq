@@ -620,8 +620,8 @@ export async function claimSlot(base44, slotKey, realId, opts = {}) {
   // On release, previousRealId allows the server to clear the SchoolPreference link.
   try {
     const base = slot.type === "family"
-      ? { type: "family", realId, athletes: slot.athletes.map(d => ({ athleteName: d.athleteName, gradYear: d.gradYear })) }
-      : { type: "coach", realId, inviteCode: slot.inviteCode };
+      ? { type: "family", realId, syntheticId: slot.syntheticId, athletes: slot.athletes.map(d => ({ athleteName: d.athleteName, gradYear: d.gradYear })) }
+      : { type: "coach", realId, syntheticId: slot.syntheticId, inviteCode: slot.inviteCode };
     const body = {
       ...base,
       ...(opts.previousRealId ? { previousRealId: opts.previousRealId } : {}),
