@@ -77,8 +77,8 @@ export const FT_TOPOLOGY = {
       _key: "athlete2",
       family: "family1",
       first_name: "Test",
-      last_name: "Johnson",
-      athlete_name: "__hc_ft_Test Johnson",
+      last_name: "Johnson2",
+      athlete_name: "__hc_ft_Test Johnson2",
       account_id: "__hc_ft_family1",
       grad_year: 2027,
       sport_id: "football",
@@ -393,14 +393,14 @@ export async function verifyTopology(base44) {
     athletes.find(a => a.athlete_name === athleteName && a.grad_year === gradYear);
 
   const tyler  = findAthlete("__hc_ft_Test Johnson",  2026);
-  const marcus = findAthlete("__hc_ft_Test Johnson",  2027);
+  const marcus = findAthlete("__hc_ft_Test Johnson2", 2027);
   const sofia  = findAthlete("__hc_ft_Test Martinez", 2026);
   const jamal  = findAthlete("__hc_ft_Test Williams", 2026);
   const aisha  = findAthlete("__hc_ft_Test Davis",    2027);
   const devon  = findAthlete("__hc_ft_Test Brown",    2028);
 
   if (!tyler)  errors.push("Athlete Test Johnson 2026 (family1) missing");
-  if (!marcus) errors.push("Athlete Test Johnson 2027 (family1) missing");
+  if (!marcus) errors.push("Athlete Test Johnson2 2027 (family1) missing");
   if (!sofia)  errors.push("Athlete Test Martinez (family2) missing");
   if (!jamal)  errors.push("Athlete Test Williams (family3) missing");
   if (!aisha)  errors.push("Athlete Test Davis (family4) missing");
@@ -567,11 +567,11 @@ export const SLOT_MAP = {
   family1: {
     type: "family",
     label: "Family 1",
-    desc: "Test Johnson QB '26 · Test Johnson WR '27",
+    desc: "Test Johnson QB '26 · Test Johnson2 WR '27",
     syntheticId: "__hc_ft_family1",
     athletes: [
-      { athleteName: "__hc_ft_Test Johnson", gradYear: 2026 },
-      { athleteName: "__hc_ft_Test Johnson", gradYear: 2027 },
+      { athleteName: "__hc_ft_Test Johnson",  gradYear: 2026 },
+      { athleteName: "__hc_ft_Test Johnson2", gradYear: 2027 },
     ],
   },
   family2: {
